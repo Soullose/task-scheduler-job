@@ -1,0 +1,25 @@
+tasks:
+  - name: "data_sync"
+    enabled: true
+    cron: "* * * * * ?" # Spring 6 字段：秒 分 时 日 月 周
+    handler: "com.w3.taskscheduler.handler.DataSyncHandler" # 全限定类名
+    description: "每 5 分钟同步一次数据"
+    timeout: 60s
+    max-retries: 3
+    retry-delay: 5s
+    allow-concurrent: false
+    params:
+      source: "api"
+      batch-size: 100
+
+  - name: "sample_task"
+    enabled: true
+    cron: "0/2 * * * * ?"
+    handler: "com.w3.taskscheduler.task.SampleTask"
+    params:
+      format: "pdf"
+
+  - name: "cache_cleanup"
+    enabled: true # 禁用：启动时不注册，可通过 API 启用
+    cron: "0/3 * * * * ?"
+    handler: "com.w3.taskscheduler.handler.TestHandler"
