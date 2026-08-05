@@ -1,14 +1,11 @@
 spring:
   application:
-    name: ds-reasonix-scheduler
-
-
-
+    name: task-scheduler
 
 scheduler:
-  timezone: "Asia/Shanghai"        # 调度时区（cron 计算基准），默认系统时区
-  shutdown-timeout: 30s            # 优雅停机等待时长，默认 30s
-  scheduler-pool-size: 2           # 触发线程数（平台线程，仅负责触发），默认 2
-  allow-concurrent: false          # 全局默认：是否允许同一任务重叠执行
-  execution-history-size: 1000     # 内存执行记录容量，默认 1000
+  timezone: "Asia/Shanghai" # 调度时区（cron 计算基准），默认系统时区
+  shutdown-timeout: 30s # 优雅停机等待时长，默认 30s
+  scheduler-pool-size: 2 # 触发线程数（平台线程，仅负责触发），默认 2
+  allow-concurrent: false # 全局默认：是否允许同一任务重叠执行
+  execution-history-size: 1000 # 内存执行记录容量，默认 1000
   task-config-location: classpath:scheduler/tasks.yaml
