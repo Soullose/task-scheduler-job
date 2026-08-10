@@ -11,11 +11,11 @@ import lombok.extern.slf4j.Slf4j;
 public class SampleTask {
     /** 支持 (TaskContext) / () / (Map) 三种签名；推荐 (TaskContext) 以获取 executionId/params */
     public void execute(TaskContext ctx) throws Exception {
-        log.info(
+        log.debug(
                 "[{}] 执行开始 executionId={} params={}",
                 ctx.task().name(), ctx.executionId(), ctx.params()
         );
         Thread.sleep(500); // 示例阻塞——发生在虚拟线程内，不占平台线程
-        log.info("[{}] 执行结束", ctx.task().name());
+        log.debug("[{}] 执行结束", ctx.task().name());
     }
 }

@@ -2,6 +2,31 @@ spring:
   application:
     name: task-scheduler
 
+  output:
+    ansi:
+      enabled: always
+
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    url: jdbc:postgresql://127.0.0.1:5432/open
+    username: postgres
+    password: 123456789
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 10
+
+  jpa:
+    generate-ddl: true
+    # show-sql: true
+    open-in-view: true
+    properties:
+      hibernate:
+        format_sql: true
+        use-sql-comments: true
+    hibernate:
+      ddl-auto: update
+
 scheduler:
   timezone: "Asia/Shanghai" # 调度时区（cron 计算基准），默认系统时区
   shutdown-timeout: 30s # 优雅停机等待时长，默认 30s
