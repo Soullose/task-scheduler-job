@@ -1,4 +1,4 @@
-package com.w3.taskscheduler.task;
+package com.w3.taskscheduler.jobs.task;
 
 import org.springframework.stereotype.Service;
 
