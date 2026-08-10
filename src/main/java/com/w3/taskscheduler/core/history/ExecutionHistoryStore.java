@@ -19,8 +19,8 @@ public class ExecutionHistoryStore {
     private final int capacity = 1000; // 来自 SchedulerProperties
 
     public void add(ExecutionRecord r) {
-        // store.computeIfAbsent(r.executionId(), k -> new ConcurrentLinkedDeque<>()).addFirst(r);
+        store.computeIfAbsent(r.executionId(), k -> new ConcurrentLinkedDeque<>()).addFirst(r);
         // 超容量移除最旧（略）
-        log.debug("记录:{}", r);
+        // log.debug("记录:{}", r);
     }
 }
