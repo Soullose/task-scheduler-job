@@ -1,12 +1,11 @@
 package com.w3.taskscheduler.core.history;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
-
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import com.w3.taskscheduler.core.model.ExecutionRecord;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -14,13 +13,12 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ExecutionHistoryStore {
-    private final ConcurrentHashMap<String, ConcurrentLinkedDeque<ExecutionRecord>> store = new ConcurrentHashMap<>();
-    private final int capacity = 1000; // 来自 SchedulerProperties
+
+    private final ApplicationEventPublisher publisher;
 
     public void add(ExecutionRecord r) {
-        store.computeIfAbsent(r.executionId(), k -> new ConcurrentLinkedDeque<>()).addFirst(r);
-        // 超容量移除最旧（略）
-        // log.debug("记录:{}", r);
+        publisher.publishEvent(new ExecutionRecordEvent(r));
     }
 }
