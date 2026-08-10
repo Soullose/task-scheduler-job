@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- 控制台：彩色 -->
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml" />
+    <conversionRule conversionWord="color"
+        class="com.w3.taskscheduler.logback.TaskSchedulerLogbackColor" />
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="ch.qos.logback.classic.PatternLayout">
+                <pattern>%clr(%d{yyyy-MM-dd HH:mm:ss}){blue} %color(%level) %clr([%thread]){green} %clr(%logger{50}){cyan} %clr(%color(%msg%n))</pattern>
+            </layout>
+            <charset class="java.nio.charset.Charset">UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- <conversionRule conversionWord="color"
+        class="com.w3.taskscheduler.logback.TaskSchedulerLogbackColor" />
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="ch.qos.logback.classic.PatternLayout">
+                <pattern>%d %green([%thread]) %color(%level) %boldCyan(%logger{50}) - %color(%msg%n)</pattern>
+            </layout>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender> -->
+
+    <!-- 文件：不带颜色（文件里写 ANSI 转义符会是乱码） -->
+    <!-- <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/task-scheduler.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/task-scheduler.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %m%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender> -->
+
+    <!-- 你项目自己的包，按需调 DEBUG -->
+    <logger name="com.w3.taskscheduler" level="DEBUG" />
+
+    <!-- Hibernate SQL：DEBUG 打印 SQL，TRACE 打印参数绑定值 -->
+    <logger name="org.hibernate.SQL" level="DEBUG" />
+    <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" />
+
+    <!-- 全局兜底保持 INFO，避免其他框架刷屏 -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <!-- <appender-ref ref="FILE" /> -->
+    </root>
+</configuration>
