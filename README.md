@@ -152,21 +152,47 @@ public class MyTask {
 ```text
 src/main/java/com/w3/taskscheduler
 ├── TaskSchedulerJobApplication.java   # Spring Boot 启动类
-├── config/                            # 运行配置：调度线程池、虚拟线程执行器、scheduler.* 属性
+├── config/                            # 运行配置：触发线程池、虚拟线程执行器、scheduler.* 属性
 ├── core/
 │   ├── config/                        # 任务配置加载与校验（YAML -> TaskDefinition）
 │   ├── exec/                          # 任务执行封装：并发闸门、超时、重试、执行记录
-│   ├── history/                       # 内存执行历史存储
+│   ├── history/                       # 执行记录事件发布与持久化（JPA 写入 t_job_execution）
 │   ├── invoke/                        # 处理器反射调用（Spring Bean 优先）
 │   ├── model/                         # 任务定义、上下文、执行记录、状态枚举
-│   └── scheduler/                     # 调度服务、任务注册中心、生命周期管理
-├── handler/                           # 示例处理器（实现 ScheduledTaskHandler）
-└── task/                              # 示例任务（普通类 + execute 方法）
+│   ├── persistence/
+│   │   ├── entity/                    # JPA 实体（JobExecutionPO）
+│   │   └── repository/                # Spring Data JPA 仓库（ExecutionRecordRepository）
+│   └── scheduler/                     # 调度服务、任务注册中心、生命周期、处理器接口
+├── jobs/
+│   ├── handler/                       # 示例处理器（实现 ScheduledTaskHandler）
+│   └── task/                          # 示例任务（普通类 + execute 方法）
+└── logback/                           # 自定义 Logback 颜色转换规则
 
 src/main/resources
 ├── application.yaml                   # 调度器运行配置
+├── logback-spring.xml                 # 日志配置（控制台 UTF-8 输出、ANSI 颜色）
 └── scheduler/tasks.yaml               # 任务定义
+
+src/main/dist                          # 发布目录素材（启动脚本与 jdk 说明）
+├── start.bat                          # Windows 启动脚本
+├── start.sh                           # Linux/macOS 启动脚本
+└── jdk/README.txt                     # Java 运行时放置说明
+
+src/assembly/dist.xml                  # Maven Assembly 描述符：mvn package 生成 scheduler/ 发布目录
 ```
+
+执行 `mvn package` 后，项目根目录会生成可分发目录：
+
+```text
+scheduler/
+├── conf/scheduler/tasks.yaml   # 外部任务配置（启动时读取，可离线修改）
+├── jdk/                        # 手动放入 Java 运行时（JDK/JRE）
+├── server/task-scheduler.jar   # Spring Boot 可执行包
+├── start.bat                   # Windows 启动脚本（自动切换 UTF-8 控制台）
+└── start.sh                    # Linux/macOS 启动脚本
+```
+
+进入 `scheduler/` 目录直接运行 `start.bat` / `start.sh` 即可启动服务；脚本基于自身所在目录定位 `jdk`、`server` 与 `conf`，不依赖当前工作目录。
 
 ## 当前状态与路线图
 
@@ -175,21 +201,27 @@ src/main/resources
 - YAML 任务加载与校验（cron 合法性、handler 非空）
 - CronTrigger 任务注册与取消、可配时区
 - 虚拟线程执行、防重闸门、超时中断、失败重试、异常隔离
-- 内存执行历史记录、优雅停机、示例任务
+- 执行记录生成，并通过 JPA 持久化到 `t_job_execution`
+- 优雅停机（取消调度 → 等待虚拟线程收尾 → 超时强制中断）
+- 运行时任务控制：启用 / 禁用 / 手动触发 / 注销（服务层接口已实现）
+- 发布目录：`mvn package` 生成 `scheduler/`，含启动脚本、外部任务配置与独立 JDK 目录
 
-**规划中（接口已预留，当前为空实现）**
+**规划中**
 
-- `SchedulerService.reload()`：重载 YAML 并增量生效
-- `enableTask()` / `disableTask()`：运行时启停任务
-- `triggerTask()`：手动触发一次（不走 cron）
-- `unregisterTask()`：注销任务
-- 执行历史查询 API 与 `execution-history-size` 属性接入
-- REST 管理接口
+- `SchedulerService.reload()`：重载 YAML 并增量生效（当前为空实现）
+- REST 管理接口：任务启停、触发、注销与执行记录查询暴露为 HTTP API（服务层已就绪，尚未接入）
+- 执行历史查询 API（目前执行记录只写不查）
+- `execution-history-size` 属性接入（当前执行记录直接落库，该属性未使用）
+- `scheduler.shutdown-timeout` 属性接入（当前优雅停机等待时长在 `SchedulerLifecycle` 中写死为 30s）
+- 虚拟线程存活数监控与告警（计划提供可扩展的 notifier 通知接口，接入日志 / 钉钉 / 邮件等渠道）
 
 ## 已知限制
 
-- 单机内存版：执行历史与任务运行时状态不持久化，重启后丢失。
-- 不支持集群/分布式：多实例部署会重复执行任务。
+- 任务运行时状态不持久化：执行记录已通过 JPA 落库（`t_job_execution`），但任务注册/启停状态仍保存在进程内存中，重启后按 YAML 重新加载；执行历史目前只写不查，查询 API 尚未实现。
+- 不支持集群/分布式：并发闸门基于进程内 Semaphore，多实例部署会重复执行任务。
+- 执行记录持久化依赖 PostgreSQL，未配置数据源时应用无法正常启动。
+- 并发闸门 Map 的 taskId 条目只增不减：任务注销后不会清理，长期运行会积累无用条目。
 - cron 仅支持 Spring 6 秒级格式。
-- 超时依赖中断协作：不响应中断的业务代码可能无法被强制停止。
+- 超时中断不彻底：超时后 `future.cancel(true)` 只是标记取消，不会真正中断已运行的虚拟线程；业务代码可能继续执行到结束并补写一条记录，依赖业务自身响应中断。
+- 失败记录的 `attempts` 恒为 0：`noteAttempt` 未被调用，失败/超时记录的尝试次数与成功记录口径不一致。
 - `retry-delay` 字段已定义，但当前重试实现未使用重试间隔。
