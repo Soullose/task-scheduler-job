@@ -55,6 +55,10 @@ public class TaskExecutorWrapper {
      * @param def 本次触发的任务定义
      */
     public void submit(TaskDefinition def) {
+        virtualThreadExecutor.submit(() -> executeWithGate(def));
+    }
+
+    private void executeWithGate(TaskDefinition def) {
         // allowConcurrent=true 时不用闸门，允许同一任务并发执行；否则每个 taskId 一个 Semaphore(1)
         boolean concurrent = Boolean.TRUE.equals(def.allowConcurrent());
         Semaphore gate = concurrent ? null
@@ -64,16 +68,13 @@ public class TaskExecutorWrapper {
             history.add(ExecutionRecord.start(def).fail(ExecutionStatus.SKIPPED, "任务还在执行中....."));
             return;
         }
-        // 提交到虚拟线程执行，调度线程立即返回；finally 保证闸门最终释放
-        virtualThreadExecutor.submit(() -> {
-            try {
-                executeWithTimeOutAndRetry(def);
-            } finally {
-                if (gate != null) {
-                    gate.release();
-                }
+        try {
+            executeWithTimeOutAndRetry(def);
+        } finally {
+            if (gate != null) {
+                gate.release();
             }
-        });
+        }
     }
 
     /**
