@@ -41,7 +41,6 @@ public class TaskExecutorWrapper {
             history.add(ExecutionRecord.start(def).fail(ExecutionStatus.SKIPPED, "任务还在执行中....."));
             return;
         }
-        ExecutionRecord.start(def);
         virtualThreadExecutor.submit(() -> {
             try {
                 executeWithTimeOutAndRetry(def);

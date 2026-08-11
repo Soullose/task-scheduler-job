@@ -14,7 +14,9 @@ import com.w3.taskscheduler.core.exec.TaskExecutorWrapper;
 import com.w3.taskscheduler.core.model.TaskDefinition;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DefaultSchedulerService implements SchedulerService {
@@ -61,21 +63,48 @@ public class DefaultSchedulerService implements SchedulerService {
 
     @Override
     public void unregisterTask(String taskId) {
-
+        registry.unregister(taskId);
     }
 
     @Override
-    public void enableTask(String taskId) {
-
+    public synchronized void enableTask(String taskId) {
+        checkStarted();
+        TaskDefinition def = requireDefinition(taskId);
+        if (registry.isRegistered(taskId)) {
+            log.info("task already enabled, taskId={}", taskId);
+            return;
+        }
+        registry.register(def.withEnabled(true), zoneId);
+        definitions.put(taskId, def.withEnabled(true));
     }
 
     @Override
-    public void disableTask(String taskId) {
-
+    public synchronized void disableTask(String taskId) {
+        requireDefinition(taskId);
+        if (!registry.isRegistered(taskId)) {
+            return;
+        }
+        registry.unregister(taskId);
+        definitions.computeIfPresent(taskId, (k, def) -> def.withEnabled(false));
     }
 
     @Override
-    public void triggerTask(String taskId) {
+    public synchronized void triggerTask(String taskId) {
+        TaskDefinition def = requireDefinition(taskId);
+        executorWrapper.submit(def);
+    }
 
+    private TaskDefinition requireDefinition(String taskId) {
+        TaskDefinition taskDefinition = definitions.getOrDefault(taskId, null);
+        if (taskDefinition == null) {
+            throw new IllegalArgumentException("task not found: " + taskId);
+        }
+        return taskDefinition;
+    }
+
+    private void checkStarted() {
+        if (!started.get()) {
+            throw new IllegalStateException("scheduler has not been started");
+        }
     }
 }

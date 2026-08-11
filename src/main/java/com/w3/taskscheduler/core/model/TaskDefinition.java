@@ -45,4 +45,19 @@ public record TaskDefinition(
                 params
         );
     }
+
+    public TaskDefinition withEnabled(boolean enable) {
+        return new TaskDefinition(
+                taskId,
+                name,
+                enable,
+                cron,
+                handler,
+                timeout,
+                maxRetries,
+                retryDelay,
+                allowConcurrent,
+                params
+        );
+    }
 }

@@ -72,6 +72,10 @@ public class JobExecutionPO {
         jobExecutionPO.setTriggeredAt(r.triggeredAt());
         jobExecutionPO.setStartAt(r.startAt());
         jobExecutionPO.setEndAt(r.endAt());
+        jobExecutionPO.setStatus(r.status());
+        jobExecutionPO.setAttempts(r.attempts());
+        jobExecutionPO.setErrorMessage(r.errorMessage());
+        jobExecutionPO.setExitCode(r.exitCode());
         return jobExecutionPO;
     }
 }
