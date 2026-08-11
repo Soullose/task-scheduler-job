@@ -27,36 +27,36 @@ public class JobExecutionPO {
     @Column(name = "id", comment = "主键id")
     private String id;
 
-    @Column(name = "execution_id")
+    @Column(name = "execution_id", comment = "本次执行唯一ID")
     private String executionId;
 
-    @Column(name = "task_name")
+    @Column(name = "task_name", comment = "任务名称")
     private String taskName;
 
-    @Column(name = "cron")
+    @Column(name = "cron", comment = "cron表达式")
     private String cron;
 
-    @Column(name = "params")
+    @Column(name = "params", comment = "参数")
     @JdbcTypeCode(SqlTypes.JSON) // params 用 Postgres jsonb 存
     private Map<String, Object> params;
 
-    @Column(name = "triggered_at")
+    @Column(name = "triggered_at", comment = "计划触发时刻")
     private Instant triggeredAt;
 
-    @Column(name = "start_at")
+    @Column(name = "start_at", comment = "开始时间")
     private Instant startAt;
 
-    @Column(name = "end_at")
+    @Column(name = "end_at", comment = "结束时间")
     private Instant endAt;
 
-    @Column(name = "execution_status")
+    @Column(name = "execution_status", comment = "执行状态")
     @Enumerated(EnumType.STRING)
     private ExecutionStatus status;
 
-    @Column(name = "attempts")
+    @Column(name = "attempts", comment = "尝试次数")
     private int attempts;
 
-    @Column(name = "error_msg", length = 2000)
+    @Column(name = "error_msg", length = 2000, comment = "异常消息")
     private String errorMessage;
 
     // @Column(name = "exit_code")
