@@ -46,7 +46,7 @@
 
     <!-- Hibernate SQL：DEBUG 打印 SQL，TRACE 打印参数绑定值 -->
     <logger name="org.hibernate.SQL" level="DEBUG" />
-    <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" />
+    <!-- <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" /> -->
 
     <!-- 全局兜底保持 INFO，避免其他框架刷屏 -->
     <root level="INFO">
