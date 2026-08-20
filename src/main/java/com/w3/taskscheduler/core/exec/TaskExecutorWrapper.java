@@ -9,6 +9,8 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.stereotype.Component;
 
@@ -90,6 +92,10 @@ public class TaskExecutorWrapper {
      */
     private void executeWithTimeOutAndRetry(TaskDefinition def) {
         ExecutionRecord.Builder rec = ExecutionRecord.start(def);
+
+        AtomicBoolean terminal = new AtomicBoolean(false); // 本次触发的终态写锁：谁先抢到谁写
+        AtomicInteger attemptCounter = new AtomicInteger(); // 真实尝试次数，超时/失败时也能拿到
+
         FutureTask<Outcome> future = new FutureTask<>(() -> runWithRetry(def, rec));
         virtualThreadExecutor.execute(future);
 
@@ -103,22 +109,34 @@ public class TaskExecutorWrapper {
             }
             Outcome outcome = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS); // 等待执行完成；超过 timeout 抛
                                                                                      // TimeoutException
-            history.add(rec.succeed(outcome.attempts())); // 当前线程没被中断，写库安全
+            int attempt = outcome.status() == ExecutionStatus.SUCCESS
+                    ? outcome.attempts()
+                    : attemptCounter.get();
+            recordOnce(rec, terminal, attemptCounter, outcome.status(), outcome.message(), attempt);
         } catch (TimeoutException e) {
             future.cancel(true); // 标记取消；注意 CompletableFuture 不会真正中断已启动的虚拟线程，后台仍可能执行完并补写记录
-            history.add(rec.fail(ExecutionStatus.TIMEOUT, "任务超时：" + e.getMessage()));
+            recordOnce(
+                    rec, terminal, attemptCounter, ExecutionStatus.TIMEOUT,
+                    "任务超时：" + e.getMessage(), attemptCounter.get()
+            );
         } catch (InterruptedException e) {
             // 停机/中断：恢复中断标记，避免吞掉线程中断状态
             Thread.currentThread().interrupt();
             // 被超时取消时，TIMEOUT 记录已由取消方写入，这里不要再补
             if (!future.isCancelled()) {
-                history.add(rec.fail(ExecutionStatus.INTERRUPTED, "任务被中断"));
+                recordOnce(
+                        rec, terminal, attemptCounter, ExecutionStatus.INTERRUPTED,
+                        "任务被中断", attemptCounter.get()
+                );
             }
             return;
 
         } catch (Exception e) {
             // 任何未预期异常（如 timeout 为 null 的 NPE）统一记为 FAILED
-            history.add(rec.fail(ExecutionStatus.FAILED, "任务异常：" + e.getMessage()));
+            recordOnce(
+                    rec, terminal, attemptCounter, ExecutionStatus.FAILED,
+                    "任务异常：" + e.getMessage(), attemptCounter.get()
+            );
         }
     }
 
@@ -157,6 +175,21 @@ public class TaskExecutorWrapper {
                 }
                 // 未超过 maxRetries：继续下一轮重试（当前未应用 retryDelay，立即重试）
             }
+        }
+    }
+
+    private void recordOnce(ExecutionRecord.Builder rec, AtomicBoolean terminal,
+            AtomicInteger attemptCounter, ExecutionStatus status,
+            String msg, int attempt) {
+        if (!terminal.compareAndSet(false, true)) {
+            log.warn("本次触发已有终态记录，丢弃重复记录 status={}", status); // 双写保护
+            return;
+        }
+        rec.noteAttempt(attempt);
+        if (status == ExecutionStatus.SUCCESS) {
+            history.add(rec.succeed(attempt));
+        } else {
+            history.add(rec.fail(status, msg));
         }
     }
 }
