@@ -3,9 +3,9 @@ package com.w3.taskscheduler.core.exec;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -16,6 +16,7 @@ import com.w3.taskscheduler.core.history.ExecutionHistoryStore;
 import com.w3.taskscheduler.core.invoke.TaskInvoker;
 import com.w3.taskscheduler.core.model.ExecutionRecord;
 import com.w3.taskscheduler.core.model.ExecutionStatus;
+import com.w3.taskscheduler.core.model.Outcome;
 import com.w3.taskscheduler.core.model.TaskContext;
 import com.w3.taskscheduler.core.model.TaskDefinition;
 
@@ -89,8 +90,9 @@ public class TaskExecutorWrapper {
      */
     private void executeWithTimeOutAndRetry(TaskDefinition def) {
         ExecutionRecord.Builder rec = ExecutionRecord.start(def);
-        CompletableFuture<Void> future = CompletableFuture
-                .runAsync(() -> runWithRetry(def, rec), virtualThreadExecutor);
+        FutureTask<Outcome> future = new FutureTask<>(() -> runWithRetry(def, rec));
+        virtualThreadExecutor.execute(future);
+
         try {
             // 仅当 timeout 显式配置为非 null、非零、非负时才采用配置值，否则用 DEFAULT_TIMEOUT
             Duration timeout = def.timeout() == null || def.timeout().isZero() || def.timeout().isNegative()
@@ -99,17 +101,24 @@ public class TaskExecutorWrapper {
             if (def.timeout() == null) {
                 log.warn("任务 [{}] 未配置 timeout，使用默认值 {}", def.name(), DEFAULT_TIMEOUT);
             }
-            future.get(timeout.toMillis(), TimeUnit.MILLISECONDS); // 等待执行完成；超过 timeout 抛 TimeoutException
+            Outcome outcome = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS); // 等待执行完成；超过 timeout 抛
+                                                                                     // TimeoutException
+            history.add(rec.succeed(outcome.attempts())); // 当前线程没被中断，写库安全
         } catch (TimeoutException e) {
             future.cancel(true); // 标记取消；注意 CompletableFuture 不会真正中断已启动的虚拟线程，后台仍可能执行完并补写记录
-            history.add(rec.fail(ExecutionStatus.TIMEOUT, e.getMessage()));
+            history.add(rec.fail(ExecutionStatus.TIMEOUT, "任务超时：" + e.getMessage()));
         } catch (InterruptedException e) {
             // 停机/中断：恢复中断标记，避免吞掉线程中断状态
             Thread.currentThread().interrupt();
-            history.add(rec.fail(ExecutionStatus.INTERRUPTED, "interrupted"));
+            // 被超时取消时，TIMEOUT 记录已由取消方写入，这里不要再补
+            if (!future.isCancelled()) {
+                history.add(rec.fail(ExecutionStatus.INTERRUPTED, "任务被中断"));
+            }
+            return;
+
         } catch (Exception e) {
             // 任何未预期异常（如 timeout 为 null 的 NPE）统一记为 FAILED
-            history.add(rec.fail(ExecutionStatus.FAILED, e.getMessage()));
+            history.add(rec.fail(ExecutionStatus.FAILED, "任务异常：" + e.getMessage()));
         }
     }
 
@@ -127,27 +136,24 @@ public class TaskExecutorWrapper {
      * @param def 任务定义
      * @param rec 当前触发对应的执行记录构建器
      */
-    private void runWithRetry(TaskDefinition def, ExecutionRecord.Builder rec) {
+    private Outcome runWithRetry(TaskDefinition def, ExecutionRecord.Builder rec) {
         int attempt = 0;
         while (true) {
             attempt++;
 
             try {
                 taskInvoker.invoke(def, new TaskContext(UUID.randomUUID().toString(), def, rec.triggeredAt()));
-                history.add(rec.succeed(attempt));
-                return;
+                return Outcome.success(attempt);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                history.add(rec.fail(ExecutionStatus.INTERRUPTED, "任务被中断"));
-                return;
+                return Outcome.interrupted(); // 不写库！这个线程已被中断，不能再碰数据库
             } catch (Throwable t) {
                 if (attempt > def.maxRetries()) {
                     log.error(
                             "任务[{}] 重试 {} 次后仍失败，放弃（不影响调度器与其他任务）",
                             def.taskId(), attempt, t
                     );
-                    history.add(rec.fail(ExecutionStatus.FAILED, t.getMessage()));
-                    return;
+                    return Outcome.failed(t.getMessage());
                 }
                 // 未超过 maxRetries：继续下一轮重试（当前未应用 retryDelay，立即重试）
             }
