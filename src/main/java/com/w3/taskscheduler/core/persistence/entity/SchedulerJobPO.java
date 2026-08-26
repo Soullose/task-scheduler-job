@@ -1,8 +1,5 @@
 package com.w3.taskscheduler.core.persistence.entity;
 
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -45,7 +42,6 @@ public class SchedulerJobPO {
     @Column(name = "allow_concurrent", comment = "任务级覆盖全局并发设置")
     private boolean allowConcurrent;
 
-    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
-    @Column(name = "params", comment = "自定义参数")
+    @Column(name = "params", columnDefinition = "TEXT", comment = "自定义参数")
     private String params;
 }
