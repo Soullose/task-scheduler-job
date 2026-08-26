@@ -27,6 +27,18 @@ spring:
     hibernate:
       ddl-auto: update
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          - health
+          - info
+          - metrics
+  endpoint:
+    health:
+      show-details: always
+
 scheduler:
   timezone: "Asia/Shanghai" # 调度时区（cron 计算基准），默认系统时区
   shutdown-timeout: 30s # 优雅停机等待时长，默认 30s
@@ -34,3 +46,22 @@ scheduler:
   allow-concurrent: false # 全局默认：是否允许同一任务重叠执行
   execution-history-size: 1000 # 内存执行记录容量，默认 1000
   task-config-location: classpath:scheduler/tasks.yaml
+
+  monitor:
+    warn-threshold: 800 # R1：存活数警戒水位
+    critical-threshold: 1500 # R2：存活数危险水位
+    leak-window-minutes: 10 # R3：泄漏检测窗口（连续不降采样点）
+    platform-thread-warn: 60 # R6：平台线程警戒
+    skip-rate-warn: 0.3 # R4：跳过率警戒
+    timeout-rate-warn: 0.2 # R5a：超时率警戒
+    timeout-rate-critical: 0.5 # R5b：超时率严重
+
+  alert:
+    enabled: true
+    cooldown: 10m
+    evaluate-interval: 30s
+    webhook:
+      url: "" # 填写后启用 WebhookNotifier
+      secret: ""
+      timeout: 5s
+      retries: 2
