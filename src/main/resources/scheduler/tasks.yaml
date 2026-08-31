@@ -20,6 +20,7 @@ tasks:
       format: "pdf"
 
   - name: "cache_cleanup"
-    enabled: true # 禁用：启动时不注册，可通过 API 启用
+    enabled: true
     cron: "0/3 * * * * ?"
     handler: "com.w3.taskscheduler.jobs.handler.TestHandler"
+    run-on-startup: true # 程序启动后立即执行一次（不依赖 cron）

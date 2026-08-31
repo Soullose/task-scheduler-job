@@ -48,7 +48,8 @@ public class DefaultSchedulerService implements SchedulerService {
      * 1. CAS 保证只启动一次；
      * 2. 初始化时区；
      * 3. 加载全部任务定义到内存快照；
-     * 4. 仅把 enabled 的任务注册进 {@link TaskRegistry}。
+     * 4. 仅把 enabled 的任务注册进 {@link TaskRegistry}；
+     * 5. 对 enabled 且 runOnStartup=true 的任务各立即执行一次（异步，不阻塞启动）。
      */
     @Override
     public synchronized void start() {
@@ -62,6 +63,15 @@ public class DefaultSchedulerService implements SchedulerService {
 
             taskDefinitions.stream().filter(def -> def.enabled())
                     .forEach(d -> registry.register(d, zoneId));
+
+            // 启动后立即执行一次：仅对 enabled 且 runOnStartup=true 的任务，
+            // 直接提交到虚拟线程执行（走并发闸门/超时/重试/执行记录，不阻塞启动流程）
+            taskDefinitions.stream()
+                    .filter(def -> def.enabled() && def.runOnStartup())
+                    .forEach(d -> {
+                        log.info("event=startup.run taskId={} name={} (run-on-startup)", d.taskId(), d.name());
+                        executorWrapper.submit(d);
+                    });
 
         } catch (IOException e) {
             throw new RuntimeException(e);

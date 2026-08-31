@@ -6,6 +6,7 @@
 
 - **YAML 任务定义**：任务在 `classpath:scheduler/tasks.yaml` 中声明，启动时自动加载、校验并注册。
 - **秒级 Cron 调度**：基于 Spring 6 六字段 Cron 表达式（秒 分 时 日 月 周），支持配置调度时区。
+- **启动即执行**：任务可配置 `run-on-startup`，程序启动后立即执行一次（不依赖 cron），适合启动时的缓存预热、数据初始化等场景。
 - **虚拟线程执行**：任务业务逻辑运行在虚拟线程中，不占用平台触发线程，适合 IO 密集型任务。
 - **并发防重**：通过 Semaphore 闸门控制，默认不允许同一任务重叠执行（可按任务或全局覆盖）。
 - **超时中断**：单次执行超过 `timeout` 通过 `FutureTask.cancel(true)` 真正中断业务虚拟线程并记录 `TIMEOUT`。
@@ -72,6 +73,7 @@ mvnw.cmd test
 | `max-retries` | 失败后的最大重试次数（默认 `0`，即不重试） |
 | `retry-delay` | 重试间隔（字段已定义，当前实现未使用） |
 | `allow-concurrent` | 任务级覆盖全局并发设置 |
+| `run-on-startup` | 程序启动后是否立即执行一次（默认 `false`；仅当 `enabled: true` 时生效，不依赖 cron） |
 | `params` | 自定义参数，通过 `TaskContext.params()` 获取 |
 
 > `taskId` 无需配置：加载时由系统为每条任务生成 UUID。
@@ -103,6 +105,7 @@ tasks:
     enabled: true
     cron: "0/3 * * * * ?"
     handler: "com.w3.taskscheduler.jobs.handler.TestHandler"
+    run-on-startup: true # 程序启动后立即执行一次（不依赖 cron）
 ```
 
 ## 编写任务
@@ -201,6 +204,7 @@ scheduler/
 
 - YAML 任务加载与校验（cron 合法性、handler 非空）
 - CronTrigger 任务注册与取消、可配时区
+- 启动即执行：`run-on-startup: true` 的任务在程序启动后立即执行一次
 - 虚拟线程执行、防重闸门、超时真正中断（FutureTask）、失败重试、异常隔离
 - 执行记录生成，并通过 JPA 持久化到 `t_job_execution`
 - 终态记录幂等：一次触发只落一条终态记录（recordOnce + AtomicBoolean），成功记录写入真实尝试次数

@@ -17,6 +17,7 @@ import jakarta.validation.constraints.NotNull;
  * @param maxRetries
  * @param retryDelay
  * @param allowConcurrent
+ * @param runOnStartup 程序启动后是否立即执行一次（不依赖 cron，仅当 enabled=true 时生效）
  * @param params
  */
 public record TaskDefinition(
@@ -29,6 +30,7 @@ public record TaskDefinition(
         int maxRetries,
         Duration retryDelay,
         Boolean allowConcurrent,
+        boolean runOnStartup,
         Map<String, Object> params) {
 
     public TaskDefinition withTaskId(String taskId) {
@@ -42,6 +44,7 @@ public record TaskDefinition(
                 maxRetries,
                 retryDelay,
                 allowConcurrent,
+                runOnStartup,
                 params
         );
     }
@@ -57,6 +60,7 @@ public record TaskDefinition(
                 maxRetries,
                 retryDelay,
                 allowConcurrent,
+                runOnStartup,
                 params
         );
     }
