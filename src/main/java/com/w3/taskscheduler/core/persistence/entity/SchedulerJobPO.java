@@ -1,5 +1,7 @@
 package com.w3.taskscheduler.core.persistence.entity;
 
+import com.github.f4b6a3.uuid.UuidCreator;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -13,7 +15,7 @@ public class SchedulerJobPO {
 
     @Id
     @Column(name = "id", length = 50, comment = "主键")
-    private String id;
+    private String id = UuidCreator.getTimeOrderedEpoch().toString();
 
     @Column(name = "name", length = 200, comment = "任务名")
     private String name;

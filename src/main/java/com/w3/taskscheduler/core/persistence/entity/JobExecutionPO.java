@@ -2,11 +2,11 @@ package com.w3.taskscheduler.core.persistence.entity;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import com.github.f4b6a3.uuid.UuidCreator;
 import com.w3.taskscheduler.core.model.ExecutionRecord;
 import com.w3.taskscheduler.core.model.ExecutionStatus;
 
@@ -25,7 +25,7 @@ public class JobExecutionPO {
 
     @Id
     @Column(name = "id", comment = "主键id")
-    private String id;
+    private String id = UuidCreator.getTimeOrderedEpoch().toString();
 
     @Column(name = "execution_id", comment = "本次执行唯一ID")
     private String executionId;
@@ -64,7 +64,7 @@ public class JobExecutionPO {
 
     public static JobExecutionPO from(ExecutionRecord r) {
         JobExecutionPO jobExecutionPO = new JobExecutionPO();
-        jobExecutionPO.setId(UUID.randomUUID().toString());
+        jobExecutionPO.setId(UuidCreator.getTimeOrderedEpoch().toString());
         jobExecutionPO.setExecutionId(r.executionId());
         jobExecutionPO.setTaskName(r.taskName());
         jobExecutionPO.setCron(r.cron());
