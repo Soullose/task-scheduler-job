@@ -3,12 +3,13 @@ package com.w3.taskscheduler.core.model;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
+
+import com.github.f4b6a3.uuid.UuidCreator;
 
 public record ExecutionRecord(
         String executionId, // UUID，每次触发唯一
         String taskName, // 任务名
-        String cron, // 触发时的 cron 快照
+        String cron, // 触发时的调度快照（cron 表达式；interval 任务该字段为空）
         Map<String, Object> params, // 参数快照（深拷贝，防业务修改影响后续）
         Instant triggeredAt, // 计划触发时刻
         Instant startAt, // 实际开始时刻（虚拟线程内）
@@ -27,7 +28,7 @@ public record ExecutionRecord(
     public static ExecutionRecord skipped(TaskDefinition def, String reason) {
         Instant now = Instant.now();
         return new ExecutionRecord(
-                UUID.randomUUID().toString(),
+                UuidCreator.getTimeOrderedEpoch().toString(),
                 def.name(),
                 def.cron(),
                 def.params() == null ? Map.of() : new HashMap<>(def.params()),
@@ -36,7 +37,7 @@ public record ExecutionRecord(
     }
 
     public static final class Builder {
-        private final String executionId = UUID.randomUUID().toString();
+        private final String executionId = UuidCreator.getTimeOrderedEpoch().toString();
         private final String taskName;
         private final String cron;
         private final Map<String, Object> params;

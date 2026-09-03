@@ -11,19 +11,25 @@ import jakarta.validation.constraints.NotNull;
  * @param taskId
  * @param name
  * @param enabled
+ * @param trigger
  * @param cron
  * @param handler
  * @param timeout
  * @param maxRetries
  * @param retryDelay
  * @param allowConcurrent
- * @param runOnStartup 程序启动后是否立即执行一次（不依赖 cron，仅当 enabled=true 时生效）
+ * @param runOnStartup 程序启动后是否立即执行一次（仅 cron 模式生效，enabled=true 时；
+ *            interval 任务注册后即触发首次执行，无需配置，配置也会被忽略）
+ * @param interval 固定间隔调度（PeriodicTrigger）：配置后任务按“注册（≈启动）后立即执行一次，
+ *            之后每 interval 精确执行一次”调度，触发时刻 = 注册时刻 + k×interval（秒级相位保留，
+ *            不对齐墙钟整分/整秒）。与 {@code cron} 二选一，互斥。
  * @param params
  */
 public record TaskDefinition(
         String taskId,
         String name,
         @NotNull boolean enabled,
+        String trigger,
         String cron,
         String handler,
         Duration timeout,
@@ -31,6 +37,7 @@ public record TaskDefinition(
         Duration retryDelay,
         Boolean allowConcurrent,
         boolean runOnStartup,
+        Duration interval,
         Map<String, Object> params) {
 
     public TaskDefinition withTaskId(String taskId) {
@@ -38,6 +45,7 @@ public record TaskDefinition(
                 taskId,
                 name,
                 enabled,
+                trigger,
                 cron,
                 handler,
                 timeout,
@@ -45,6 +53,7 @@ public record TaskDefinition(
                 retryDelay,
                 allowConcurrent,
                 runOnStartup,
+                interval,
                 params
         );
     }
@@ -54,6 +63,7 @@ public record TaskDefinition(
                 taskId,
                 name,
                 enable,
+                trigger,
                 cron,
                 handler,
                 timeout,
@@ -61,6 +71,7 @@ public record TaskDefinition(
                 retryDelay,
                 allowConcurrent,
                 runOnStartup,
+                interval,
                 params
         );
     }

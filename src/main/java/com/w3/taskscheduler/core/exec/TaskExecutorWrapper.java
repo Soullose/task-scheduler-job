@@ -2,7 +2,6 @@ package com.w3.taskscheduler.core.exec;
 
 import java.time.Duration;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.FutureTask;
@@ -14,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.stereotype.Component;
 
+import com.github.f4b6a3.uuid.UuidCreator;
 import com.w3.taskscheduler.core.history.ExecutionHistoryStore;
 import com.w3.taskscheduler.core.invoke.TaskInvoker;
 import com.w3.taskscheduler.core.model.ExecutionRecord;
@@ -160,7 +160,9 @@ public class TaskExecutorWrapper {
             attempt++;
 
             try {
-                taskInvoker.invoke(def, new TaskContext(UUID.randomUUID().toString(), def, rec.triggeredAt()));
+                taskInvoker.invoke(
+                        def, new TaskContext(UuidCreator.getTimeOrderedEpoch().toString(), def, rec.triggeredAt())
+                );
                 return Outcome.success(attempt);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
