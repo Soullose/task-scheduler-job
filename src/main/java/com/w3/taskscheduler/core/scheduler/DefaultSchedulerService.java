@@ -64,12 +64,13 @@ public class DefaultSchedulerService implements SchedulerService {
             taskDefinitions.stream().filter(def -> def.enabled())
                     .forEach(d -> registry.register(d, zoneId));
 
-            // 启动后立即执行一次：仅对 enabled 且 runOnStartup=true 的任务，
-            // 直接提交到虚拟线程执行（走并发闸门/超时/重试/执行记录，不阻塞启动流程）
+            // 启动后立即执行一次：对 enabled 且 runOnStartup=true 的任务（cron 与 interval 均适用），
+            // 直接提交到虚拟线程执行（走并发闸门/超时/重试/执行记录，不阻塞启动流程）。
+            // 说明：interval 任务的周期首次触发在注册后一个 interval，与 run-on-startup 的即时执行不重叠。
             taskDefinitions.stream()
                     .filter(def -> def.enabled() && def.runOnStartup())
                     .forEach(d -> {
-                        log.info("event=startup.run taskId={} name={} (run-on-startup)", d.taskId(), d.name());
+                        log.info("event=startup.run taskId={} name={} trigger={} (run-on-startup)", d.taskId(), d.name(), d.trigger());
                         executorWrapper.submit(d);
                     });
 

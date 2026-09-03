@@ -1,12 +1,13 @@
 # task-scheduler
 
-基于 Spring 调度与虚拟线程的轻量级进程内任务调度框架。通过 YAML 定义任务，使用 Spring 6 秒级 Cron 定时触发，在虚拟线程中执行业务逻辑，并提供防重、超时、重试、执行历史与优雅停机等能力。
+基于 Spring 调度与虚拟线程的轻量级进程内任务调度框架。通过 YAML 定义任务，支持两种调度模式：Spring 六字段秒级 Cron（按墙钟网格触发）与固定间隔 `interval`（PeriodicTrigger，如每 200 秒），在虚拟线程中执行业务逻辑，并提供防重、超时、重试、执行历史与优雅停机等能力。
 
 ## 功能特性
 
 - **YAML 任务定义**：任务在 `classpath:scheduler/tasks.yaml` 中声明，启动时自动加载、校验并注册。
 - **秒级 Cron 调度**：基于 Spring 6 六字段 Cron 表达式（秒 分 时 日 月 周），支持配置调度时区。
-- **启动即执行**：任务可配置 `run-on-startup`，程序启动后立即执行一次（不依赖 cron），适合启动时的缓存预热、数据初始化等场景。
+- **固定间隔调度（interval）**：任务可配置 `trigger: interval` + `interval`（如 `200s`、`3m`、`2h`）改用 PeriodicTrigger 按固定周期触发——注册后一个 `interval` 才首次触发（**不会注册即执行**），之后每 `interval` 执行一次；如需启动立即执行一次可配 `run-on-startup: true`。推进方式可选 `interval-mode: rate`（默认，节奏不漂移）或 `delay`。支持 cron 表达不了的任意秒级周期（如每 200 秒）。
+- **启动即执行**：任务可配置 `run-on-startup`，程序启动后立即执行一次（cron 与 interval 任务均适用；interval 任务的周期首次触发在其后一个 interval，二者不重叠），适合启动时的缓存预热、数据初始化等场景。
 - **虚拟线程执行**：任务业务逻辑运行在虚拟线程中，不占用平台触发线程，适合 IO 密集型任务。
 - **并发防重**：通过 Semaphore 闸门控制，默认不允许同一任务重叠执行（可按任务或全局覆盖）。
 - **超时中断**：单次执行超过 `timeout` 通过 `FutureTask.cancel(true)` 真正中断业务虚拟线程并记录 `TIMEOUT`。
@@ -34,11 +35,12 @@ mvnw.cmd spring-boot:run
 ./mvnw spring-boot:run
 ```
 
-启动后，调度器会自动加载 `src/main/resources/scheduler/tasks.yaml` 中的 3 个示例任务并按各自的 Cron 触发：
+启动后，调度器会自动加载 `src/main/resources/scheduler/tasks.yaml` 中的 4 个示例任务并按各自的调度触发：
 
-- `data_sync`：每秒触发，模拟数据同步（示例执行约 2 秒）；
-- `sample_task`：每 2 秒触发，输出 executionId 与参数；
-- `cache_cleanup`：每 3 秒触发，输出日志。
+- `data_sync`：每秒触发（秒级 cron），模拟数据同步（示例执行约 2 秒）；
+- `sample_task`：每 2 秒触发（秒级 cron），输出 executionId 与参数；
+- `cache_cleanup`：每 3 秒触发（秒级 cron），输出日志；
+- `heartbeat_interval`：`interval: 200s` 固定间隔触发（PeriodicTrigger 模式，每 200 秒一次）。
 
 运行测试：
 
@@ -67,13 +69,16 @@ mvnw.cmd test
 | --- | --- |
 | `name` | 任务名称，用于日志与执行记录 |
 | `enabled` | 是否启用；启动时只注册 `enabled: true` 的任务 |
-| `cron` | Spring 6 秒级 Cron（六字段：秒 分 时 日 月 周） |
+| `trigger` | 调度模式选择（必填）：`cron` 或 `interval` |
+| `cron` | Spring 六字段秒级 Cron（秒 分 时 日 月 周），按墙钟网格触发；仅 `trigger: cron` 时配置 |
+| `interval` | 固定间隔调度（如 `200s`、`3m`、`2h`，PeriodicTrigger）：注册后一个 `interval` 才首次触发（不会立即执行），之后每 `interval` 一次；如需启动即执行配 `run-on-startup: true`；仅 `trigger: interval` 时配置 |
+| `interval-mode` | interval 的推进模式（可选）：`rate`（默认，fixed-rate：每次 = 上次计划触发时刻 + interval，节奏不漂移）或 `delay`（fixed-delay：每次 = 上次完成时刻 + interval） |
 | `handler` | 处理器全限定类名 |
 | `timeout` | 单次执行超时（如 `60s`），超时中断并记录 `TIMEOUT` |
 | `max-retries` | 失败后的最大重试次数（默认 `0`，即不重试） |
 | `retry-delay` | 重试间隔（字段已定义，当前实现未使用） |
 | `allow-concurrent` | 任务级覆盖全局并发设置 |
-| `run-on-startup` | 程序启动后是否立即执行一次（默认 `false`；仅当 `enabled: true` 时生效，不依赖 cron） |
+| `run-on-startup` | 程序启动后是否立即执行一次（默认 `false`；enabled=true 时生效；cron 与 interval 均适用——interval 任务的周期首次触发在其后一个 interval，与本次即时执行不重叠） |
 | `params` | 自定义参数，通过 `TaskContext.params()` 获取 |
 
 > `taskId` 无需配置：加载时由系统为每条任务生成 UUID。
@@ -84,7 +89,8 @@ mvnw.cmd test
 tasks:
   - name: "data_sync"
     enabled: true
-    cron: "* * * * * ?"
+    trigger: cron
+    cron: "* * * * * ?" # 每秒触发（演示秒级 cron）
     handler: "com.w3.taskscheduler.jobs.handler.DataSyncHandler"
     timeout: 60s
     max-retries: 3
@@ -96,17 +102,36 @@ tasks:
 
   - name: "sample_task"
     enabled: true
-    cron: "0/2 * * * * ?"
+    trigger: cron
+    cron: "0/2 * * * * ?" # 每 2 秒触发
     handler: "com.w3.taskscheduler.jobs.task.SampleTask"
     params:
       format: "pdf"
 
   - name: "cache_cleanup"
     enabled: true
-    cron: "0/3 * * * * ?"
+    trigger: cron
+    cron: "0/3 * * * * ?" # 每 3 秒触发
     handler: "com.w3.taskscheduler.jobs.handler.TestHandler"
     run-on-startup: true # 程序启动后立即执行一次（不依赖 cron）
+
+  # interval 模式示例：每 200 秒执行一次（PeriodicTrigger）
+  # interval 任务注册后一个 interval 才首次触发；如需启动即执行一次再配 run-on-startup: true
+  - name: "heartbeat_interval"
+    enabled: true
+    trigger: interval
+    interval: 200s
+    interval-mode: rate # 可选：rate（默认）/ delay
+    handler: "com.w3.taskscheduler.jobs.handler.TestHandler"
 ```
+
+### cron 还是 interval？
+
+- `cron` 描述的是**墙钟网格上重复的时刻**：`0 */3 * * * ?` 表示“第 0 秒、分钟为 3 的整数倍”，所以只会落在 `20:33:00`、`20:36:00` …，与任务何时注册无关；`run-on-startup` 只是额外在启动时补跑一次，不会改变后续触发的网格相位。
+- `interval` 描述的是**相对注册时刻的固定周期**：注册后一个 interval 才首次触发（默认不立即执行，需要启动即执行配 `run-on-startup`），之后按 `interval-mode` 推进（默认 `rate`：每次 = 上次计划触发时刻 + interval）。程序 `20:30:30` 启动并配置 `interval: 3m`（`run-on-startup: true` 时先在启动时补一次），周期触发即为 `20:33:30`、`20:36:30` …（秒级相位保留，不会回到整秒）；配置 `interval: 200s` 即可得到 cron 无法表达的每 200 秒周期。
+- `interval-mode: delay` 时每次 = 上次**完成**时刻 + interval（节奏会被执行耗时推动）；本框架中业务在虚拟线程异步执行、触发只负责提交（微秒级），因此防重叠仍由 `allow-concurrent: false` 闸门负责，两种 mode 都不会因业务耗时重叠执行。
+
+> 需要“从整点对齐的墙钟网格”用 `trigger: cron`；需要“从启动/注册时刻起每 N 秒/分/小时”用 `trigger: interval`。同一任务只能选一种 trigger，相关字段（cron / interval、interval-mode）必须与 trigger 一致，否则启动校验报错。
 
 ## 编写任务
 
@@ -202,9 +227,10 @@ scheduler/
 
 **已实现**
 
-- YAML 任务加载与校验（cron 合法性、handler 非空）
-- CronTrigger 任务注册与取消、可配时区
-- 启动即执行：`run-on-startup: true` 的任务在程序启动后立即执行一次
+- YAML 任务加载与校验（`trigger: cron|interval` 必填、字段与模式互斥/合法性、handler 非空）
+- 任务注册与取消：cron（CronTrigger，可配时区）与固定间隔（interval / PeriodicTrigger）两种调度模式
+- 固定间隔调度：`interval` 任务注册后一个 interval 才首次触发（不立即执行，可配 `run-on-startup: true` 在启动时补一次即时执行），推进方式可选 `interval-mode: rate`（默认，每次 = 上次计划触发时刻 + interval）或 `delay`（每次 = 上次完成时刻 + interval），支持 cron 表达不了的任意秒级周期（如 200s、2h）
+- 启动即执行：`run-on-startup: true` 的任务在程序启动后立即执行一次（cron 与 interval 任务均适用）
 - 虚拟线程执行、防重闸门、超时真正中断（FutureTask）、失败重试、异常隔离
 - 执行记录生成，并通过 JPA 持久化到 `t_job_execution`
 - 终态记录幂等：一次触发只落一条终态记录（recordOnce + AtomicBoolean），成功记录写入真实尝试次数
@@ -228,7 +254,8 @@ scheduler/
 - 不支持集群/分布式：并发闸门基于进程内 Semaphore，多实例部署会重复执行任务。
 - 执行记录持久化依赖 PostgreSQL，未配置数据源时应用无法正常启动。
 - 并发闸门 Map 的 taskId 条目只增不减：任务注销后不会清理，长期运行会积累无用条目。
-- cron 仅支持 Spring 6 秒级格式。
+- cron 仅支持 Spring 六字段秒级格式（秒 分 时 日 月 周）；需要任意秒级周期或“从注册时刻起按相位锚定”的调度请改用 `interval` 模式。
+- `interval` 任务的执行记录中 `cron` 快照为空（执行记录目前只保存 cron 字段，未落库 interval 调度信息）。
 - 超时中断为协作式：`FutureTask.cancel(true)` 会真正中断业务线程，但业务代码若不响应中断（忽略 `InterruptedException` 或阻塞调用不抛异常），任务仍可能继续执行；终态幂等保证此时也不会重复落记录。
 - 失败/超时记录的 `attempts` 仍为 0：`recordOnce` 已调用 `noteAttempt`，但共享 `AtomicInteger` 计数器尚未接入 `runWithRetry` 的重试循环，目前仅成功记录能写入真实尝试次数。
 - `retry-delay` 字段已定义，但当前重试实现未使用重试间隔。

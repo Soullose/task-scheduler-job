@@ -11,18 +11,22 @@ import jakarta.validation.constraints.NotNull;
  * @param taskId
  * @param name
  * @param enabled
- * @param trigger
+ * @param trigger 调度模式选择：{@code cron} 或 {@code interval}（必填）
  * @param cron
  * @param handler
  * @param timeout
  * @param maxRetries
  * @param retryDelay
  * @param allowConcurrent
- * @param runOnStartup 程序启动后是否立即执行一次（仅 cron 模式生效，enabled=true 时；
- *            interval 任务注册后即触发首次执行，无需配置，配置也会被忽略）
- * @param interval 固定间隔调度（PeriodicTrigger）：配置后任务按“注册（≈启动）后立即执行一次，
- *            之后每 interval 精确执行一次”调度，触发时刻 = 注册时刻 + k×interval（秒级相位保留，
- *            不对齐墙钟整分/整秒）。与 {@code cron} 二选一，互斥。
+ * @param runOnStartup 程序启动后是否立即执行一次（默认 false；enabled=true 时生效）。
+ *            cron 与 interval 任务均适用：interval 任务的周期首次触发在注册后一个 interval，
+ *            配 run-on-startup 可在启动时补一次即时执行，二者不重叠。
+ * @param interval 固定间隔调度（PeriodicTrigger）：配置后任务在注册后一个 interval 首次触发
+ *            （不会注册即执行），之后每 interval 执行一次，推进方式见 {@link #intervalMode()}。
+ *            与 {@code cron} 二选一，互斥。
+ * @param intervalMode interval 的推进模式（可选）：{@link IntervalMode#RATE rate}（默认）或
+ *            {@link IntervalMode#DELAY delay}，对应 PeriodicTrigger 的 fixed-rate / fixed-delay；
+ *            仅当 {@code trigger=interval} 时有意义。
  * @param params
  */
 public record TaskDefinition(
@@ -38,6 +42,7 @@ public record TaskDefinition(
         Boolean allowConcurrent,
         boolean runOnStartup,
         Duration interval,
+        IntervalMode intervalMode,
         Map<String, Object> params) {
 
     public TaskDefinition withTaskId(String taskId) {
@@ -54,6 +59,7 @@ public record TaskDefinition(
                 allowConcurrent,
                 runOnStartup,
                 interval,
+                intervalMode,
                 params
         );
     }
@@ -72,6 +78,7 @@ public record TaskDefinition(
                 allowConcurrent,
                 runOnStartup,
                 interval,
+                intervalMode,
                 params
         );
     }
