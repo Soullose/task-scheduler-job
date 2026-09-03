@@ -18,7 +18,7 @@ public class JobExecutionEventWriter {
 
     @TransactionalEventListener(fallbackExecution = true)
     public void onExecutionRecord(ExecutionRecordEvent event) {
-        log.debug("event:{}", event);
+        // log.debug("event:{}", event);
         repository.save(JobExecutionPO.from(event.record()));
     }
 }
