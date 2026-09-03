@@ -1,9 +1,16 @@
+# 任务定义（支持两种调度模式，每条任务二选一）：
+#   cron     : Spring 六字段秒级表达式（秒 分 时 日 月 周），按墙钟网格触发。
+#              例如 "0 */3 * * * ?" = 每 3 分钟，只会落在 20:33:00 / 20:36:00 ...（第 0 秒）。
+#   interval : 固定间隔触发（PeriodicTrigger），例如 "200s" = 每 200 秒一次（cron 表达不了的秒级周期）。
+#              interval 任务在注册（≈程序启动）后立即执行一次，之后每 interval 执行一次；
+#              触发时刻 = 注册时刻 + k×interval（如 20:30:30 注册 + 3m → 20:33:30、20:36:30 ...），秒级相位保留。
 tasks:
   - name: "data_sync"
     enabled: true
-    cron: "* * * * * ?" # Spring 6 字段：秒 分 时 日 月 周
+    trigger: cron
+    cron: "* * * * * ?" # 示例：每秒触发
     handler: "com.w3.taskscheduler.jobs.handler.DataSyncHandler" # 全限定类名
-    description: "每 5 分钟同步一次数据"
+    description: "每秒同步一次数据（示例，仅演示秒级 cron）"
     timeout: 60s
     max-retries: 3
     retry-delay: 5s
@@ -14,13 +21,25 @@ tasks:
 
   - name: "sample_task"
     enabled: true
-    cron: "0/2 * * * * ?"
+    trigger: cron
+    cron: "0/2 * * * * ?" # 示例：每 2 秒触发
     handler: "com.w3.taskscheduler.jobs.task.SampleTask"
     params:
       format: "pdf"
 
   - name: "cache_cleanup"
     enabled: true
-    cron: "0/3 * * * * ?"
+    trigger: cron
+    cron: "0/3 * * * * ?" # 示例：每 3 秒触发
     handler: "com.w3.taskscheduler.jobs.handler.TestHandler"
     run-on-startup: true # 程序启动后立即执行一次（不依赖 cron）
+
+  # interval 模式示例：每 200 秒执行一次（PeriodicTrigger，注册后立即执行首次）
+  # - interval 与 cron 互斥，同一任务只能配置一个
+  # - interval 任务自带“注册（≈启动）后立即执行一次”，无需（也不应）再配 run-on-startup
+  - name: "heartbeat_interval"
+    enabled: true
+    trigger: interval
+    interval: 200s
+    handler: "com.w3.taskscheduler.jobs.handler.TestHandler"
+    description: "演示 interval 固定间隔调度：每 200 秒执行一次"
