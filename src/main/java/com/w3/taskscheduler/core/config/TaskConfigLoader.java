@@ -23,7 +23,10 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 读 YAML → List<TaskDefinition>；校验 trigger 取值、cron/interval 与模式互斥、handler 可解析
+ * 读 YAML → List<TaskDefinition>；校验 trigger 取值、cron/interval 与模式互斥、handler 可解析。
+ * <p>
+ * 在 {@code scheduler.task-source} 体系下本加载器承担 YAML 路径：auto 模式 DB 为空/读库失败时的兜底，
+ * 以及强制 yaml 模式。DB 主路径见 {@link DatabaseTaskConfigLoader}，编排见 {@link TaskConfigSource}。
  */
 @Slf4j
 @AllArgsConstructor

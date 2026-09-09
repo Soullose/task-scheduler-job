@@ -34,4 +34,21 @@ public class SchedulerProperties {
     private int executionHistorySize = 1000;
 
     private String taskConfigLocation;
+
+    /**
+     * 任务源选择（{@code scheduler.task-source}）：
+     * <ul>
+     * <li>{@link TaskSource#AUTO AUTO}（默认）：启动时先读 {@code t_scheduler_job} 任务表，
+     *     表为空或读库失败（连接/查询异常）时自动兜底读取 {@code task-config-location} 指定的 YAML；</li>
+     * <li>{@link TaskSource#YAML YAML}：强制只读 YAML，跳过 DB（开发调试 / 临时切换用）。</li>
+     * </ul>
+     */
+    private TaskSource taskSource = TaskSource.AUTO;
+
+    public enum TaskSource {
+        /** DB 优先；空表 / 读库失败兜底 YAML（默认） */
+        AUTO,
+        /** 强制只读 YAML，跳过 DB */
+        YAML
+    }
 }

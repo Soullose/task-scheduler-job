@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.stereotype.Service;
 
 import com.w3.taskscheduler.config.SchedulerProperties;
-import com.w3.taskscheduler.core.config.TaskConfigLoader;
+import com.w3.taskscheduler.core.config.TaskConfigSource;
 import com.w3.taskscheduler.core.exec.TaskExecutorWrapper;
 import com.w3.taskscheduler.core.model.TaskDefinition;
 
@@ -22,14 +22,16 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 调度服务默认实现：
  * <ul>
- * <li>启动时从 YAML 加载任务定义，并把 enabled 的任务按 cron 注册到 {@link TaskRegistry}；</li>
- * <li>提供任务的启用/禁用/手动触发/注销等运行时控制能力；</li>
+ * <li>启动时经 {@link TaskConfigSource} 加载任务定义：auto 模式优先从 t_scheduler_job 读取，
+ *     表为空/读库失败自动兜底 YAML（或强制 yaml 模式直接读 YAML），并把 enabled 的任务按 trigger
+ *     注册到 {@link TaskRegistry}；</li>
+ * <li>提供任务的启用/禁用/手动触发/注销等运行时控制能力（仅内存态，不写库，重启后以任务源为准）；</li>
  * <li>真正的任务执行统一委托给 {@link TaskExecutorWrapper}（虚拟线程 + 并发闸门 + 执行记录）。</li>
  * </ul>
  */
 public class DefaultSchedulerService implements SchedulerService {
-    /** 任务配置加载器：读取 YAML，校验并返回 {@link TaskDefinition} 列表 */
-    private final TaskConfigLoader loader;
+    /** 启动任务源：auto(DB 优先 + YAML 兜底) / yaml(强制)，读取并校验返回 {@link TaskDefinition} 列表 */
+    private final TaskConfigSource taskSource;
     /** 注册中心：维护 taskId -> ScheduledFuture 的映射，负责 cron 的注册与取消 */
     private final TaskRegistry registry;
     /** 任务执行包装：提交虚拟线程执行、并发闸门、超时/重试、生成执行记录 */
@@ -58,7 +60,7 @@ public class DefaultSchedulerService implements SchedulerService {
         }
         zoneId = props.getTimezone();
         try {
-            List<TaskDefinition> taskDefinitions = loader.load();
+            List<TaskDefinition> taskDefinitions = taskSource.loadStartupTasks();
             taskDefinitions.forEach(definition -> definitions.put(definition.taskId(), definition));
 
             taskDefinitions.stream().filter(def -> def.enabled())
@@ -94,7 +96,7 @@ public class DefaultSchedulerService implements SchedulerService {
     }
 
     /**
-     * 重读 YAML 配置，对任务定义做 diff 后增量生效（TODO：尚未实现）。
+     * 重读任务源（DB/YAML）配置，对任务定义做 diff 后增量生效（TODO：尚未实现）。
      */
     @Override
     public synchronized void reload() {

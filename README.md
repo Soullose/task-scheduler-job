@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- **YAML 任务定义**：任务在 `classpath:scheduler/tasks.yaml` 中声明，启动时自动加载、校验并注册。
+- **DB 优先 + YAML 兜底的任务定义**：默认（`scheduler.task-source: auto`）启动时先读 PostgreSQL `t_scheduler_job` 任务表，校验后注册 `enable=true` 的任务；表为空或读库失败时自动整份兜底读取 `scheduler.task-config-location`（默认 `classpath:scheduler/tasks.yaml`）中的任务。可配 `scheduler.task-source: yaml` 强制只读 YAML（跳过 DB）。
 - **秒级 Cron 调度**：基于 Spring 6 六字段 Cron 表达式（秒 分 时 日 月 周），支持配置调度时区。
 - **固定间隔调度（interval）**：任务可配置 `trigger: interval` + `interval`（如 `200s`、`3m`、`2h`）改用 PeriodicTrigger 按固定周期触发——注册后一个 `interval` 才首次触发（**不会注册即执行**），之后每 `interval` 执行一次；如需启动立即执行一次可配 `run-on-startup: true`。推进方式可选 `interval-mode: rate`（默认，节奏不漂移）或 `delay`。支持 cron 表达不了的任意秒级周期（如每 200 秒）。
 - **启动即执行**：任务可配置 `run-on-startup`，程序启动后立即执行一次（cron 与 interval 任务均适用；interval 任务的周期首次触发在其后一个 interval，二者不重叠），适合启动时的缓存预热、数据初始化等场景。
@@ -59,7 +59,20 @@ mvnw.cmd test
 | `scheduler.scheduler-pool-size` | `2` | 触发线程池大小（平台线程，仅负责触发，不执行业务） |
 | `scheduler.allow-concurrent` | `false` | 全局默认：是否允许同一任务重叠执行 |
 | `scheduler.execution-history-size` | `1000` | 执行记录容量上限（当前未接入该属性，执行记录直接落库） |
-| `scheduler.task-config-location` | 无（示例为 `classpath:scheduler/tasks.yaml`） | 任务定义文件位置 |
+| `scheduler.task-config-location` | 无（示例为 `classpath:scheduler/tasks.yaml`） | 任务定义 YAML 位置（DB 为空 / 读库失败 / 强制 `yaml` 时使用） |
+| `scheduler.task-source` | `auto` | 启动任务源：`auto`（默认）先读 `t_scheduler_job`，空表/读库失败兜底 YAML；`yaml` 强制只读 YAML（跳过 DB） |
+
+### 任务来源：`t_scheduler_job`（DB 优先）
+
+`auto` 模式下调度进程对 `t_scheduler_job` **只读**，任务行由外部维护（手工 SQL / 将来的管理端），
+灌入数据后**重启进程**即以 DB 为准（运行期不重读；enable/disable/手动触发等运行期控制仍只改内存）。
+
+建表/旧表升级/示例灌数脚本见 `docs/sql/t_scheduler_job.sql`。库行与 YAML 任务字段等价（能力不减），列包括：
+`id`（即调度 taskId，必填）、`name`、`enable`、`trigger`(`cron`/`interval`，可空自动推断)、`cron`、`interval`、
+`interval_mode`(`rate`/`delay`，缺省 `rate`)、`run_on_startup`(缺省 `false`)、`handler`、`description`(仅展示)、
+`time_out`、`max_retries`、`retry_delay`、`allow_concurrent`(空=跟随全局默认)、`params`(JSON 对象文本)。
+时延列与 YAML 同写法（`60s`/`200s`/`2h`/`PT1H`）。行数据不合法（坏 cron、无法推断 trigger、params 非 JSON 等）
+会在启动时快速失败报错，**不**触发 YAML 兜底（兜底仅针对表为空/读库层失败）。
 
 ## 任务定义
 
@@ -81,7 +94,7 @@ mvnw.cmd test
 | `run-on-startup` | 程序启动后是否立即执行一次（默认 `false`；enabled=true 时生效；cron 与 interval 均适用——interval 任务的周期首次触发在其后一个 interval，与本次即时执行不重叠） |
 | `params` | 自定义参数，通过 `TaskContext.params()` 获取 |
 
-> `taskId` 无需配置：加载时由系统为每条任务生成 UUID。
+> `taskId` 无需配置：YAML 加载时为每条任务生成 UUID；DB 优先时直接以 `t_scheduler_job.id` 作为 taskId。
 
 示例：
 
@@ -250,7 +263,7 @@ scheduler/
 
 ## 已知限制
 
-- 任务运行时状态不持久化：执行记录已通过 JPA 落库（`t_job_execution`），但任务注册/启停状态仍保存在进程内存中，重启后按 YAML 重新加载；执行历史目前只写不查，查询 API 尚未实现。
+- 任务运行时状态不持久化：执行记录已通过 JPA 落库（`t_job_execution`），任务注册/启停状态保存在进程内存中；重启后任务定义按 `scheduler.task-source` 重新加载——默认先读 `t_scheduler_job`（`enable=true` 的行），表为空/读库失败时兜底读取 YAML。执行历史目前只写不查，查询 API 尚未实现。
 - 不支持集群/分布式：并发闸门基于进程内 Semaphore，多实例部署会重复执行任务。
 - 执行记录持久化依赖 PostgreSQL，未配置数据源时应用无法正常启动。
 - 并发闸门 Map 的 taskId 条目只增不减：任务注销后不会清理，长期运行会积累无用条目。

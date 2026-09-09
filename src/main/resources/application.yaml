@@ -45,7 +45,10 @@ scheduler:
   scheduler-pool-size: 2 # 触发线程数（平台线程，仅负责触发），默认 2
   allow-concurrent: false # 全局默认：是否允许同一任务重叠执行
   execution-history-size: 1000 # 内存执行记录容量，默认 1000
-  task-config-location: classpath:scheduler/tasks.yaml
+  task-config-location: classpath:scheduler/tasks.yaml # 任务定义 YAML（作为 DB 为空/读库失败/强制 yaml 时的任务来源）
+  # 任务源：auto(默认) = 启动先读 t_scheduler_job 任务表（表为空或读库失败时自动兜底上方 YAML）；
+  #         yaml       = 强制只读 YAML，跳过 DB（开发调试用）
+  task-source: auto
 
   monitor:
     warn-threshold: 800 # R1：存活数警戒水位
