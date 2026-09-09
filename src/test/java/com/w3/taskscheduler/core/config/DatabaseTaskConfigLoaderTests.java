@@ -48,7 +48,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setAllowConcurrent(false);
         po.setParams("{\"source\":\"api\",\"batch-size\":100}");
 
-        TaskDefinition def = loader.map(po);
+        TaskDefinition def = loader.toTaskDefinition(po);
 
         assertEquals("id-cron-1", def.taskId());
         assertEquals("db_sync", def.name());
@@ -79,7 +79,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setInterval("200s");
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
 
-        TaskDefinition def = loader.map(po);
+        TaskDefinition def = loader.toTaskDefinition(po);
 
         assertEquals("interval", def.trigger(), "trigger 为空、interval 有值时应推断为 interval");
         assertEquals(Duration.ofSeconds(200), def.interval());
@@ -99,7 +99,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setRunOnStartup(true);
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
 
-        TaskDefinition def = loader.map(po);
+        TaskDefinition def = loader.toTaskDefinition(po);
 
         assertEquals("interval", def.trigger());
         assertEquals(Duration.ofHours(1), def.interval());
@@ -114,7 +114,7 @@ class DatabaseTaskConfigLoaderTests {
         SchedulerJobPO po = row("id-bad-1", "bad");
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
         assertTrue(e.getMessage().contains("无法推断"), e.getMessage());
     }
 
@@ -125,7 +125,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setInterval("200s");
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
 
-        assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
     }
 
     @Test
@@ -136,7 +136,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setIntervalMode("every-day");
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
         assertTrue(e.getMessage().contains("interval_mode 非法"), e.getMessage());
     }
 
@@ -149,7 +149,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setInterval("10x");
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
         assertTrue(e.getMessage().contains("无法解析为时长"), e.getMessage());
     }
 
@@ -161,7 +161,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
         po.setParams("not-a-json{");
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
         assertTrue(e.getMessage().contains("params 不是合法的 JSON 对象"), e.getMessage());
     }
 
@@ -173,7 +173,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
         po.setParams("[1,2,3]");
 
-        assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
     }
 
     // ---------- 复用 YAML 校验规则：快速失败 ----------
@@ -185,7 +185,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setCron("not-a-cron");
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
         assertTrue(e.getMessage().contains("cron 非法"), e.getMessage());
     }
 
@@ -196,7 +196,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setCron("0/5 * * * * ?");
         po.setHandler("   ");
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
         assertTrue(e.getMessage().contains("handler 不能为空"), e.getMessage());
     }
 
@@ -208,7 +208,7 @@ class DatabaseTaskConfigLoaderTests {
         po.setInterval("200s");
         po.setHandler("com.w3.taskscheduler.jobs.handler.TestHandler");
 
-        assertThrows(IllegalArgumentException.class, () -> loader.map(po));
+        assertThrows(IllegalArgumentException.class, () -> loader.toTaskDefinition(po));
     }
 
     private static SchedulerJobPO row(String id, String name) {

@@ -3,8 +3,12 @@ package com.w3.taskscheduler.core.scheduler;
 import java.io.IOException;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
@@ -22,10 +26,12 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 调度服务默认实现：
  * <ul>
- * <li>启动时经 {@link TaskConfigSource} 加载任务定义：auto 模式优先从 t_scheduler_job 读取，
- *     表为空/读库失败自动兜底 YAML（或强制 yaml 模式直接读 YAML），并把 enabled 的任务按 trigger
+ * <li>启动与 {@code reload()} 均经 {@link TaskConfigSource} 加载任务定义：auto 模式优先从 t_scheduler_job
+ *     读取（表为空/读库失败自动兜底 YAML），yaml 模式强制读 YAML，并把 enabled 的任务按 trigger
  *     注册到 {@link TaskRegistry}；</li>
- * <li>提供任务的启用/禁用/手动触发/注销等运行时控制能力（仅内存态，不写库，重启后以任务源为准）；</li>
+ * <li>{@code reload()} 以全量快照 diff 增量生效：DB 未变则零改动，新增注册、消失注销、调度字段变化
+ *     注销重注册（仅内存态的服务层 enable/disable/trigger/unregister 不写库；持久化增删改/启停
+ *     由 admin REST 路径写 DB 后触发 reload）；</li>
  * <li>真正的任务执行统一委托给 {@link TaskExecutorWrapper}（虚拟线程 + 并发闸门 + 执行记录）。</li>
  * </ul>
  */
@@ -96,11 +102,80 @@ public class DefaultSchedulerService implements SchedulerService {
     }
 
     /**
-     * 重读任务源（DB/YAML）配置，对任务定义做 diff 后增量生效（TODO：尚未实现）。
+     * 重读任务源（auto：t_scheduler_job，空表/读库失败兜底 YAML；yaml：强制 YAML），
+     * 与当前调度做全量快照 diff 后增量生效：
+     * <ul>
+     * <li>源没有变化 → 调度器零改动（no-op，不会盲目全量注销重注册）；</li>
+     * <li>enabled 新增 → 注册；消失 → 注销；调度相关字段变化 → 注销后重注册（按最新定义）；</li>
+     * <li>{@code run_on_startup} 只在进程启动时补跑：reload 不补跑，且仅它（或 name）变化不触发重注册；</li>
+     * <li>源数据不合法 / 读源失败（非兜底场景）→ 抛异常快速失败，内存快照与注册中心保持原状，不部分生效。</li>
+     * </ul>
      */
     @Override
     public synchronized void reload() {
+        checkStarted();
+        try {
+            List<TaskDefinition> target = taskSource.loadStartupTasks();
+            applySnapshot(target);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
+    /**
+     * 把内存快照与注册中心收敛到目标任务列表（幂等：无变化零改动）。
+     * 先读后写：任何读取/映射/校验异常都会在改动前抛出，保证调度状态不部分生效。
+     */
+    private void applySnapshot(List<TaskDefinition> target) {
+        // 1) 内存定义快照整体替换为目标集（含 enabled=false 的任务），保证 triggerTask/服务层查询与源一致
+        definitions.clear();
+        target.forEach(d -> definitions.put(d.taskId(), d));
+
+        // 2) 注册中心按 enabled 集做 diff
+        Map<String, TaskDefinition> current = registry.getTaskDefinitions().stream()
+                .collect(Collectors.toMap(TaskDefinition::taskId, Function.identity()));
+        Map<String, TaskDefinition> desired = target.stream()
+                .filter(TaskDefinition::enabled)
+                .collect(Collectors.toMap(TaskDefinition::taskId, Function.identity()));
+
+        // 2a) 取消：已注册但源中不再 enabled / 调度字段发生变化的任务（变化者注销后用新定义重注册）
+        current.forEach((taskId, old) -> {
+            TaskDefinition next = desired.get(taskId);
+            if (next == null) {
+                log.info("event=reload.remove taskId={} name={}", taskId, old.name());
+                registry.unregister(taskId);
+            } else if (!sameScheduling(old, next)) {
+                log.info("event=reload.update taskId={} name={} trigger={} (re-register)", taskId, next.name(), next.trigger());
+                registry.unregister(taskId);
+                registry.register(next, zoneId);
+            }
+        });
+        // 2b) 新增：源中 enabled 且当前未注册
+        desired.forEach((taskId, def) -> {
+            if (!current.containsKey(taskId)) {
+                log.info("event=reload.add taskId={} name={} trigger={}", taskId, def.name(), def.trigger());
+                registry.register(def, zoneId);
+            }
+        });
+        log.info("event=reload.done definitions={} registered={}", definitions.size(), desired.size());
+    }
+
+    /**
+     * 调度语义是否等价（决定是否需注销重注册）。
+     * 只比较会影响未来触发与执行行为的字段；{@code name}/{@code run_on_startup} 不参与——
+     * name 仅展示，run_on_startup 仅进程启动时生效。
+     */
+    private static boolean sameScheduling(TaskDefinition a, TaskDefinition b) {
+        return Objects.equals(a.trigger(), b.trigger())
+                && Objects.equals(a.cron(), b.cron())
+                && Objects.equals(a.handler(), b.handler())
+                && Objects.equals(a.timeout(), b.timeout())
+                && a.maxRetries() == b.maxRetries()
+                && Objects.equals(a.retryDelay(), b.retryDelay())
+                && Objects.equals(a.allowConcurrent(), b.allowConcurrent())
+                && Objects.equals(a.interval(), b.interval())
+                && a.intervalMode() == b.intervalMode()
+                && Objects.equals(a.params(), b.params());
     }
 
     /**

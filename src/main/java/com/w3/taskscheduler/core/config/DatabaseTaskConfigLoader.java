@@ -66,16 +66,16 @@ public class DatabaseTaskConfigLoader {
             log.info("event=db.task.load rows=0 -> 任务表为空，交由上层决定是否兜底 YAML");
             return List.of();
         }
-        List<TaskDefinition> defs = rows.stream().map(this::map).toList();
+        List<TaskDefinition> defs = rows.stream().map(this::toTaskDefinition).toList();
         log.info("event=db.task.load rows={}", defs.size());
         return defs;
     }
 
     /**
      * 单行 → {@link TaskDefinition}（宽松缺省推断 + 复用 {@link TaskConfigLoader#validate} 快速失败）。
-     * 包私有便于单测直接覆盖映射逻辑，不依赖仓库。
+     * 供加载路径与 REST 增/改前的写前校验共用（不依赖仓库，可直接调用）。
      */
-    TaskDefinition map(SchedulerJobPO row) {
+    public TaskDefinition toTaskDefinition(SchedulerJobPO row) {
         String label = row.getId() + "/" + row.getName();
         String trigger = trimToNull(row.getTrigger());
         String cron = trimToNull(row.getCron());

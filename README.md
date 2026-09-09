@@ -194,16 +194,17 @@ public class MyTask {
 ```text
 src/main/java/com/w3/taskscheduler
 ├── TaskSchedulerJobApplication.java   # Spring Boot 启动类
+├── admin/                             # REST 管理接口：任务增删改查/启停/触发/reload（dto/ 请求响应模型）
 ├── config/                            # 运行配置：触发线程池、虚拟线程执行器、scheduler.* 属性
 ├── core/
-│   ├── config/                        # 任务配置加载与校验（YAML -> TaskDefinition）
+│   ├── config/                        # 任务配置加载与校验（DB t_scheduler_job / YAML 兜底 / 任务源编排）
 │   ├── exec/                          # 任务执行封装：并发闸门、超时中断、重试、终态记录幂等（recordOnce）
 │   ├── history/                       # 执行记录事件发布与持久化（JPA 写入 t_job_execution）
 │   ├── invoke/                        # 处理器调用（Spring 容器 Bean 优先，兼容 AOP 代理；普通类反射兜底）
 │   ├── model/                         # 任务定义、上下文、执行结果（Outcome）、执行记录、状态枚举
 │   ├── persistence/
-│   │   ├── entity/                    # JPA 实体（JobExecutionPO）
-│   │   └── repository/                # Spring Data JPA 仓库（ExecutionRecordRepository）
+│   │   ├── entity/                    # JPA 实体（SchedulerJobPO、JobExecutionPO）
+│   │   └── repository/                # Spring Data JPA 仓库
 │   └── scheduler/                     # 调度服务、任务注册中心、生命周期、处理器接口
 ├── jobs/
 │   ├── handler/                       # 示例处理器（实现 ScheduledTaskHandler）
@@ -236,6 +237,36 @@ scheduler/
 
 进入 `scheduler/` 目录直接运行 `start.bat` / `start.sh` 即可启动服务；脚本基于自身所在目录定位 `jdk`、`server` 与 `conf`，不依赖当前工作目录。
 
+## REST 管理接口
+
+任务数据管理走 HTTP（**只写 `t_scheduler_job`，不写 task.yaml**）。增删改与启停写库成功后自动调用 `reload()` 增量生效；`/api/reload` 手动刷新（DB 无变化时 no-op）。请求/响应字段与表列一致（snake_case），`params` 为 JSON 对象。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/tasks` | 任务列表（读 DB 全部行，含 `enable=false`） |
+| GET | `/api/tasks/{id}` | 任务详情 |
+| POST | `/api/tasks` | 新建任务（`id` 可不传，服务端生成；重复 409；不合法 400）→ 自动 reload |
+| PUT | `/api/tasks/{id}` | 整体替换更新（404 / 400）→ 自动 reload |
+| DELETE | `/api/tasks/{id}` | 删除任务（404）→ 自动 reload |
+| POST | `/api/tasks/{id}/enable` | 启用：写 DB `enable=true` → 自动 reload |
+| POST | `/api/tasks/{id}/disable` | 停用：写 DB `enable=false` → 自动 reload |
+| POST | `/api/tasks/{id}/trigger` | 手动触发一次（不改 DB） |
+| POST | `/api/reload` | 手动 reload |
+
+**reload 语义**：按 `scheduler.task-source` 重读任务源（auto：DB 优先，空表/读库失败兜底 YAML；yaml：强制 YAML），与当前调度做**全量快照 diff**——新增注册、消失注销、调度相关字段（trigger/cron/interval/interval-mode/handler/超时/重试/并发/params）变化则注销重注册；仅 `name`/`run_on_startup` 变化不重排；`run_on_startup` 只在进程启动时补跑，reload 不补跑；源数据不合法或读源失败（非兜底场景）快速失败，**调度保持原状**不部分生效。
+
+> 示例：
+> ```bash
+> # 新建任务（写 DB 并立即生效）
+> curl -X POST http://127.0.0.1:8080/api/tasks -H 'Content-Type: application/json' -d '{
+>   "name":"data_sync","enable":true,"trigger":"cron","cron":"*/5 * * * * ?",
+>   "handler":"com.w3.taskscheduler.jobs.handler.DataSyncHandler","time_out":"60s",
+>   "max_retries":3,"params":{"source":"api"}}'
+> curl -X POST http://127.0.0.1:8080/api/tasks/{id}/disable   # 停用（持久化）
+> curl -X POST http://127.0.0.1:8080/api/tasks/{id}/trigger   # 手动触发一次
+> curl -X POST http://127.0.0.1:8080/api/reload               # 手动 reload
+> ```
+
 ## 当前状态与路线图
 
 **已实现**
@@ -249,13 +280,13 @@ scheduler/
 - 终态记录幂等：一次触发只落一条终态记录（recordOnce + AtomicBoolean），成功记录写入真实尝试次数
 - Spring 容器 Handler 调用：按 bean 名称 / 目标类名 / 实现类名匹配，兼容 AOP 代理，普通类反射兜底
 - 优雅停机（取消调度 → 等待虚拟线程收尾 → 超时强制中断）
-- 运行时任务控制：启用 / 禁用 / 手动触发 / 注销（服务层接口已实现）
+- 运行时任务控制：启用 / 禁用 / 手动触发 / 注销（服务层内存态接口；REST 启停/增删改为持久化写 DB 路径，见上文 REST 管理接口）
+- 运行时 reload：`SchedulerService.reload()` 按任务源重读并做全量快照 diff 增量生效（新增注册/消失注销/字段变重注册，无变化零改动；`run_on_startup` 仅启动补跑）
+- REST 管理接口：任务查询 / 增删改 / 启停 / 手动触发 / 手动 reload（只写 DB，写后自动 reload）
 - 发布目录：`mvn package` 生成 `scheduler/`，含启动脚本、外部任务配置与独立 JDK 目录
 
 **规划中**
 
-- `SchedulerService.reload()`：重载 YAML 并增量生效（当前为空实现）
-- REST 管理接口：任务启停、触发、注销与执行记录查询暴露为 HTTP API（服务层已就绪，尚未接入）
 - 执行历史查询 API（目前执行记录只写不查）
 - `execution-history-size` 属性接入（当前执行记录直接落库，该属性未使用）
 - `scheduler.shutdown-timeout` 属性接入（当前优雅停机等待时长在 `SchedulerLifecycle` 中写死为 30s）
