@@ -35,11 +35,13 @@ mvnw.cmd spring-boot:run
 ./mvnw spring-boot:run
 ```
 
-启动后，调度器会自动加载 `src/main/resources/scheduler/tasks.yaml` 中的 4 个示例任务并按各自的调度触发：
+启动后，调度器会自动加载 `src/main/resources/scheduler/tasks.yaml` 中的 5 个示例任务（其中 `job_execution_cleanup` 默认启用）并按各自的调度触发：
 
 - `data_sync`：每秒触发（秒级 cron），模拟数据同步（示例执行约 2 秒）；
 - `sample_task`：每 2 秒触发（秒级 cron），输出 executionId 与参数；
 - `cache_cleanup`：每 3 秒触发（秒级 cron），输出日志；
+- `job_execution_cleanup`：每天 00:00（`cron 0 0 0 * * ?`）物理清理 `t_job_execution` 中 `SUCCESS`
+  且 `end_at` 早于「当前时间 - 12 小时」的记录（保留最近 12 小时，每批 1000 条循环删除，非 SUCCESS 记录不清理）；
 - `heartbeat_interval`：`interval: 200s` 固定间隔触发（PeriodicTrigger 模式，每 200 秒一次）。
 
 运行测试：

@@ -39,6 +39,19 @@ tasks:
     handler: "com.w3.taskscheduler.jobs.handler.TestHandler"
     run-on-startup: true # 程序启动后立即执行一次（不依赖 cron）
 
+  # 历史执行记录清理：每天 00:00（东八区）执行一次，物理删除 t_job_execution 中
+  # execution_status='SUCCESS' 且 end_at 早于「当前时间 - 12 小时」的记录（保留最近 12 小时；
+  # 非 SUCCESS 状态一律保留）。每批 1000 条循环删除直到清干净，单批独立事务。
+  # 保留期与批大小硬编码在 JobExecutionCleanupHandler；未配 timeout，避免大批量积压时被超时中断
+  # （分批已提交，中断不会回滚，但会留下未清理数据并在日志中标记 TIMEOUT）。
+  - name: "job_execution_cleanup"
+    enabled: true
+    trigger: cron
+    cron: "0 0 0 * * ?" # 每天 00:00:00
+    handler: "com.w3.taskscheduler.jobs.handler.JobExecutionCleanupHandler"
+    description: "每天 00:00 清理 t_job_execution 中 12 小时前的 SUCCESS 执行记录"
+    allow-concurrent: false # 清理任务不允许重叠执行
+
   # interval 模式示例：每 200 秒执行一次（PeriodicTrigger，注册后一个 interval 才首次触发，不会立即执行）
   # - interval 与 cron 互斥，同一任务只能配置一个（由 trigger 决定）
   # - 若需要启动立即执行一次，配 run-on-startup: true 即可（与周期首次触发不重叠）
