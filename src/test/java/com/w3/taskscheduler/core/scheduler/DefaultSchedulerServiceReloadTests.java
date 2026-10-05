@@ -1,7 +1,9 @@
 package com.w3.taskscheduler.core.scheduler;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -141,6 +143,49 @@ class DefaultSchedulerServiceReloadTests {
         assertEquals(2, registry.unregisterCalls);
         assertFalse(registry.isRegistered("a"));
         assertFalse(registry.isRegistered("b"));
+    }
+
+    // ---------- 内存定义快照不残留：整体替换而不是只 put ----------
+
+    @Test
+    void restartReplacesDefinitionSnapshotInsteadOfAccumulating() {
+        // 场景：任务源每次加载都给出新的 taskId（YAML 加载器每条任务都生成随机 UUID 就是如此）。
+        // 若 start() 只 put 不 clear，快照会按「每次启动」累积一份且永不回收。
+        source.setTarget(List.of(cronDef("gen-1-a", true, "0 0 0 1 1 ?")));
+        service.start();
+
+        service.stop();
+        source.setTarget(List.of(cronDef("gen-2-a", true, "0 0 0 1 1 ?")));
+        service.start();
+
+        assertThrows(IllegalArgumentException.class, () -> service.triggerTask("gen-1-a"),
+                "重启后上一轮的定义必须被整体替换掉，不能留在内存快照里（否则还能被手动触发）");
+        assertDoesNotThrow(() -> service.triggerTask("gen-2-a"), "新一轮的定义应可正常手动触发");
+    }
+
+    @Test
+    void unregisterTaskRemovesDefinitionFromSnapshot() {
+        source.setTarget(List.of(cronDef("a", true, "0 0 0 1 1 ?")));
+        service.start();
+        assertDoesNotThrow(() -> service.triggerTask("a"));
+
+        service.unregisterTask("a");
+
+        assertFalse(registry.isRegistered("a"), "注销后不应再注册");
+        assertThrows(IllegalArgumentException.class, () -> service.triggerTask("a"),
+                "注销后定义应从内存快照移除，不能再被手动触发");
+    }
+
+    @Test
+    void reloadToEmptySetAlsoClearsDefinitionSnapshot() {
+        source.setTarget(List.of(cronDef("a", true, "0 0 0 1 1 ?")));
+        service.start();
+
+        source.setTarget(List.of());
+        service.reload();
+
+        assertThrows(IllegalArgumentException.class, () -> service.triggerTask("a"),
+                "源里已消失的任务不应残留在内存快照中");
     }
 
     // ---------- helpers ----------

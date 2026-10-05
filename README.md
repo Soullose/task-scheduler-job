@@ -9,8 +9,8 @@
 - **固定间隔调度（interval）**：任务可配置 `trigger: interval` + `interval`（如 `200s`、`3m`、`2h`）改用 PeriodicTrigger 按固定周期触发——注册后一个 `interval` 才首次触发（**不会注册即执行**），之后每 `interval` 执行一次；如需启动立即执行一次可配 `run-on-startup: true`。推进方式可选 `interval-mode: rate`（默认，节奏不漂移）或 `delay`。支持 cron 表达不了的任意秒级周期（如每 200 秒）。
 - **启动即执行**：任务可配置 `run-on-startup`，程序启动后立即执行一次（cron 与 interval 任务均适用；interval 任务的周期首次触发在其后一个 interval，二者不重叠），适合启动时的缓存预热、数据初始化等场景。
 - **虚拟线程执行**：任务业务逻辑运行在虚拟线程中，不占用平台触发线程，适合 IO 密集型任务。
-- **并发防重**：通过 Semaphore 闸门控制，默认不允许同一任务重叠执行（可按任务或全局覆盖）。
-- **超时中断**：单次执行超过 `timeout` 通过 `FutureTask.cancel(true)` 真正中断业务虚拟线程并记录 `TIMEOUT`。
+- **并发防重**：通过 Semaphore 闸门控制，默认不允许同一任务重叠执行（可按任务或全局覆盖）。闸门由执行业务的虚拟线程在**业务实际结束**时释放，而不是在 `timeout` 到点写 TIMEOUT 记录时释放——超时后仍在后台收尾的那一份执行会一直占着闸门，后续触发记 `SKIPPED`，保证同一任务同时最多只有一份执行在跑。
+- **超时中断**：单次执行超过 `timeout` 通过 `FutureTask.cancel(true)` 真正中断业务虚拟线程并记录 `TIMEOUT`（中断是协作式的：业务不响应中断时仍可能继续跑完，但此时闸门不会被提前归还）。
 - **失败重试**：按 `max-retries` 顺序重试；任务异常被隔离，不影响调度器与其他任务。
 - **执行记录持久化**：每次触发生成一条终态执行记录（SUCCESS / FAILED / TIMEOUT / SKIPPED / INTERRUPTED），通过 JPA 持久化到 PostgreSQL `t_job_execution`。
 - **终态记录幂等**：同一次触发由 `AtomicBoolean` 保证只落一条终态记录，超时取消与业务线程补跑不会产生重复记录；成功记录写入真实尝试次数。
@@ -278,6 +278,9 @@ scheduler/
 - 固定间隔调度：`interval` 任务注册后一个 interval 才首次触发（不立即执行，可配 `run-on-startup: true` 在启动时补一次即时执行），推进方式可选 `interval-mode: rate`（默认，每次 = 上次计划触发时刻 + interval）或 `delay`（每次 = 上次完成时刻 + interval），支持 cron 表达不了的任意秒级周期（如 200s、2h）
 - 启动即执行：`run-on-startup: true` 的任务在程序启动后立即执行一次（cron 与 interval 任务均适用）
 - 虚拟线程执行、防重闸门、超时真正中断（FutureTask）、失败重试、异常隔离
+- 并发闸门生命周期：许可在**业务实际结束**时归还（超时提前返回不归还），慢/卡死任务不会被反复触发叠加；卡死时打 `event=task.stuck` 告警
+- 闸门条目治理：任务注销/停用/reload 移除时遗忘其闸门条目（占用中则保留），`gates` 映射不再只增不减
+- 触发队列治理：`removeOnCancelPolicy=true`，取消注册即从 `DelayedWorkQueue` 摘除已取消条目，长周期任务反复 reload 不再堆积
 - 执行记录生成，并通过 JPA 持久化到 `t_job_execution`
 - 终态记录幂等：一次触发只落一条终态记录（recordOnce + AtomicBoolean），成功记录写入真实尝试次数
 - Spring 容器 Handler 调用：按 bean 名称 / 目标类名 / 实现类名匹配，兼容 AOP 代理，普通类反射兜底
@@ -299,9 +302,10 @@ scheduler/
 - 任务运行时状态不持久化：执行记录已通过 JPA 落库（`t_job_execution`），任务注册/启停状态保存在进程内存中；重启后任务定义按 `scheduler.task-source` 重新加载——默认先读 `t_scheduler_job`（`enable=true` 的行），表为空/读库失败时兜底读取 YAML。执行历史目前只写不查，查询 API 尚未实现。
 - 不支持集群/分布式：并发闸门基于进程内 Semaphore，多实例部署会重复执行任务。
 - 执行记录持久化依赖 PostgreSQL，未配置数据源时应用无法正常启动。
-- 并发闸门 Map 的 taskId 条目只增不减：任务注销后不会清理，长期运行会积累无用条目。
+- 超时中断为协作式：`FutureTask.cancel(true)` 会真正中断业务线程，但业务代码若不响应中断（忽略 `InterruptedException` 或阻塞调用不抛异常），任务仍可能继续执行；终态幂等保证此时也不会重复落记录。
+  **此时该任务的并发闸门会一直被这份执行占用**：后续触发全部记 `SKIPPED`（`scheduler.task.skipped.total` 持续增长），日志出现 `event=task.stuck` 告警，直到这份执行自己结束。这是刻意的取舍——提前归还闸门会让慢任务被反复触发，每份都占着一份完整对象图，最终吃光堆（"进程跑不长"的典型形态）；代价是卡死任务需要人工处置：停用该任务（`POST /api/tasks/{id}/disable`）并重启进程。
+- 执行记录表 `t_job_execution` 只清理 `SUCCESS`：`SKIPPED`/`FAILED`/`TIMEOUT` 记录会一直保留。任务长期超时被跳过时，`SKIPPED` 记录会按触发频率持续累积（如每秒触发的任务每天可写入数万条），需要按需扩表或调整 `JobExecutionCleanupHandler` 的清理口径。
 - cron 仅支持 Spring 六字段秒级格式（秒 分 时 日 月 周）；需要任意秒级周期或“从注册时刻起按相位锚定”的调度请改用 `interval` 模式。
 - `interval` 任务的执行记录中 `cron` 快照为空（执行记录目前只保存 cron 字段，未落库 interval 调度信息）。
-- 超时中断为协作式：`FutureTask.cancel(true)` 会真正中断业务线程，但业务代码若不响应中断（忽略 `InterruptedException` 或阻塞调用不抛异常），任务仍可能继续执行；终态幂等保证此时也不会重复落记录。
 - 失败/超时记录的 `attempts` 仍为 0：`recordOnce` 已调用 `noteAttempt`，但共享 `AtomicInteger` 计数器尚未接入 `runWithRetry` 的重试循环，目前仅成功记录能写入真实尝试次数。
 - `retry-delay` 字段已定义，但当前重试实现未使用重试间隔。

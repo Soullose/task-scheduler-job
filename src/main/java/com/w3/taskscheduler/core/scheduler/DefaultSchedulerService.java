@@ -55,7 +55,7 @@ public class DefaultSchedulerService implements SchedulerService {
      * 启动调度器（幂等）：
      * 1. CAS 保证只启动一次；
      * 2. 初始化时区；
-     * 3. 加载全部任务定义到内存快照；
+     * 3. 加载全部任务定义到内存快照（<b>整体替换</b>，不是追加）；
      * 4. 仅把 enabled 的任务注册进 {@link TaskRegistry}；
      * 5. 对 enabled 且 runOnStartup=true 的任务各立即执行一次（异步，不阻塞启动）。
      */
@@ -67,7 +67,7 @@ public class DefaultSchedulerService implements SchedulerService {
         zoneId = props.getTimezone();
         try {
             List<TaskDefinition> taskDefinitions = taskSource.loadStartupTasks();
-            taskDefinitions.forEach(definition -> definitions.put(definition.taskId(), definition));
+            replaceDefinitions(taskDefinitions);
 
             taskDefinitions.stream().filter(def -> def.enabled())
                     .forEach(d -> registry.register(d, zoneId));
@@ -128,8 +128,7 @@ public class DefaultSchedulerService implements SchedulerService {
      */
     private void applySnapshot(List<TaskDefinition> target) {
         // 1) 内存定义快照整体替换为目标集（含 enabled=false 的任务），保证 triggerTask/服务层查询与源一致
-        definitions.clear();
-        target.forEach(d -> definitions.put(d.taskId(), d));
+        replaceDefinitions(target);
 
         // 2) 注册中心按 enabled 集做 diff
         Map<String, TaskDefinition> current = registry.getTaskDefinitions().stream()
@@ -144,6 +143,7 @@ public class DefaultSchedulerService implements SchedulerService {
             if (next == null) {
                 log.info("event=reload.remove taskId={} name={}", taskId, old.name());
                 registry.unregister(taskId);
+                executorWrapper.forgetGate(taskId);
             } else if (!sameScheduling(old, next)) {
                 log.info("event=reload.update taskId={} name={} trigger={} (re-register)", taskId, next.name(), next.trigger());
                 registry.unregister(taskId);
@@ -179,11 +179,30 @@ public class DefaultSchedulerService implements SchedulerService {
     }
 
     /**
-     * 直接注销指定任务：取消其未来的 cron 触发，并从注册中心移除。
+     * 把内存定义快照整体替换为目标集（含 {@code enabled=false} 的任务）。
+     * <p>
+     * 快照语义是「与任务源一致的全量视图」，所以这里必须<b>先清空再写入</b>：
+     * 只在 put 不 clear 的话，源里已经删掉的任务会永远留在快照里（还能被 {@code triggerTask}
+     * 手动触发），并在「{@code taskSource} 每次加载都换新 taskId」的场景下（YAML 加载器
+     * 每条任务都生成随机 UUID）按每次启动/重载累积一份，形成真正的无界增长。
+     *
+     * @param target 目标任务定义列表（可能为空）
+     */
+    private void replaceDefinitions(List<TaskDefinition> target) {
+        definitions.clear();
+        target.forEach(d -> definitions.put(d.taskId(), d));
+    }
+
+    /**
+     * 直接注销指定任务：取消其未来的 cron 触发，从注册中心移除，并从内存快照中删除定义
+     * （注销后不再存在、也不能再被 {@code triggerTask} 手动触发）；同时遗忘其并发闸门条目
+     * （闸门仍被某次执行占用时保留），避免 gates 映射只增不减。
      */
     @Override
     public void unregisterTask(String taskId) {
         registry.unregister(taskId);
+        definitions.remove(taskId);
+        executorWrapper.forgetGate(taskId);
     }
 
     /**
@@ -210,9 +229,11 @@ public class DefaultSchedulerService implements SchedulerService {
     public synchronized void disableTask(String taskId) {
         requireDefinition(taskId);
         if (!registry.isRegistered(taskId)) {
+            executorWrapper.forgetGate(taskId);
             return;
         }
         registry.unregister(taskId);
+        executorWrapper.forgetGate(taskId);
         definitions.computeIfPresent(taskId, (k, def) -> def.withEnabled(false));
     }
 

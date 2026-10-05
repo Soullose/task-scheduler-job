@@ -7,6 +7,7 @@ public interface SchedulerService {
 
     void reload(); // 按任务源重读（auto: DB，空表/读库失败兜底 YAML；yaml: 强制 YAML），diff 增量生效，无变化零改动
 
+    /** 内存态注销（不写库）：取消未来触发 + 从注册中心与内存快照中彻底移除，之后不可再被 triggerTask 触发 */
     void unregisterTask(String taskId);
 
     /** 内存态启用（不写库）：为指定任务按 trigger 重新注册；持久化启停请走 admin REST（写 DB + reload） */
