@@ -34,3 +34,5 @@ build/
 
 # 仅忽略根目录的发布目录 scheduler/（此前无前导斜杠会误伤任意深度的同名源码目录）
 /scheduler/
+
+/docs/
