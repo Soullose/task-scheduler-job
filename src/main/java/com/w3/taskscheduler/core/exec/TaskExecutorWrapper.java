@@ -248,6 +248,13 @@ public class TaskExecutorWrapper {
                 Thread.currentThread().interrupt();
                 return Outcome.interrupted(); // 不写库！这个线程已被中断，不能再碰数据库
             } catch (Throwable t) {
+                // 已被取消（超时 future.cancel(true) / 停机 shutdownNow）→ 中断状态下的重试没有意义：
+                // 虚拟线程被中断后 socket 已被 JDK 关闭，后续请求只会继续抛 "Closed by interrupt"，
+                // 既浪费重试次数，也会把「取消」误记成业务失败。
+                if (Thread.currentThread().isInterrupted()) {
+                    log.warn("任务[{}] 执行线程已被中断（任务超时或停机），放弃剩余重试", def.taskId());
+                    return Outcome.interrupted();
+                }
                 if (attempt > def.maxRetries()) {
                     log.error(
                             "任务[{}] 重试 {} 次后仍失败，放弃（不影响调度器与其他任务）",
