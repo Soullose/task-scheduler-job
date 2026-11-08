@@ -1,6 +1,6 @@
 package com.w3.taskscheduler.core.model;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 import com.w3.taskscheduler.core.invoke.TaskInvoker;
@@ -16,7 +16,7 @@ import com.w3.taskscheduler.core.invoke.TaskInvoker;
 public record TaskContext(
         String executionId,
         TaskDefinition task,
-        Instant triggeredAt) {
+        LocalDateTime triggeredAt) {
 
     /**
      * 便捷方法：直接返回任务定义的参数 Map（可能为 null）。

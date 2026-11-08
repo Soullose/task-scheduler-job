@@ -4,6 +4,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.springframework.stereotype.Component;
 
+import com.w3.taskscheduler.core.history.ExecutionPersistExecutor;
 import com.w3.taskscheduler.core.model.ExecutionStatus;
 
 import io.micrometer.core.instrument.Counter;
@@ -21,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SchedulerMetrics {
     private final CountingExecutorService countingExecutor;
+    private final ExecutionPersistExecutor persistExecutor;
     private final MeterRegistry meterRegistry;
 
     private Counter success;
@@ -40,6 +42,11 @@ public class SchedulerMetrics {
 
         Gauge.builder("scheduler.task.submitted.total", countingExecutor, CountingExecutorService::created)
                 .description("累计提交触发次数（= 累计创建虚拟线程数）")
+                .register(meterRegistry);
+
+        // 异步落库是"尽力而为"的旁路：失败只计数不打回业务线程，靠这个指标暴露静默丢记录
+        Gauge.builder("scheduler.execution.persist.failed.total", persistExecutor, ExecutionPersistExecutor::failed)
+                .description("执行记录异步落库失败/丢弃的累计条数")
                 .register(meterRegistry);
 
         success = Counter.builder("scheduler.task.success.total").description("累计成功次数").register(meterRegistry);

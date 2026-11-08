@@ -1,6 +1,6 @@
 package com.w3.taskscheduler.core.model;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -11,9 +11,9 @@ public record ExecutionRecord(
         String taskName, // 任务名
         String cron, // 触发时的调度快照（cron 表达式；interval 任务该字段为空）
         Map<String, Object> params, // 参数快照（深拷贝，防业务修改影响后续）
-        Instant triggeredAt, // 计划触发时刻
-        Instant startAt, // 实际开始时刻（虚拟线程内）
-        Instant endAt, // 结束时刻（成功/失败/超时）
+        LocalDateTime triggeredAt, // 计划触发时刻
+        LocalDateTime startAt, // 实际开始时刻（虚拟线程内）
+        LocalDateTime endAt, // 结束时刻（成功/失败/超时）
         ExecutionStatus status,
         int attempts, // 实际尝试次数（含重试）
         String errorMessage, // 失败原因摘要（异常类名+message，栈打印进日志）
@@ -26,7 +26,7 @@ public record ExecutionRecord(
      * 没开始就被并发闸门拦下，直接产出一条 SKIPPED 终态记录
      */
     public static ExecutionRecord skipped(TaskDefinition def, String reason) {
-        Instant now = Instant.now();
+        LocalDateTime now = LocalDateTime.now();
         return new ExecutionRecord(
                 UuidCreator.getTimeOrderedEpoch().toString(),
                 def.name(),
@@ -41,8 +41,8 @@ public record ExecutionRecord(
         private final String taskName;
         private final String cron;
         private final Map<String, Object> params;
-        private final Instant triggeredAt = Instant.now();
-        private final Instant startAt = Instant.now();
+        private final LocalDateTime triggeredAt = LocalDateTime.now();
+        private final LocalDateTime startAt = LocalDateTime.now();
         private int attempts = 0;
 
         private Builder(TaskDefinition def) {
@@ -51,7 +51,7 @@ public record ExecutionRecord(
             this.params = def.params() == null ? Map.of() : new HashMap<>(def.params());
         }
 
-        public Instant triggeredAt() {
+        public LocalDateTime triggeredAt() {
             return triggeredAt;
         }
 
@@ -68,7 +68,7 @@ public record ExecutionRecord(
         }
 
         private ExecutionRecord finish(ExecutionStatus status, int attempt, String errorMessage) {
-            Instant endAt = Instant.now();
+            LocalDateTime endAt = LocalDateTime.now();
             return new ExecutionRecord(
                     executionId, taskName, cron, params,
                     triggeredAt, startAt, endAt, status,

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -32,7 +33,7 @@ class JobExecutionCleanupHandlerTests {
                 "task-id", "job_execution_cleanup", true, "cron", "0 0 0 * * ?",
                 JobExecutionCleanupHandler.class.getName(), null, 0, null, false, false, null, null, null
         );
-        return new TaskContext("exec-id", def, Instant.now());
+        return new TaskContext("exec-id", def, LocalDateTime.now());
     }
 
     @Test
@@ -69,7 +70,9 @@ class JobExecutionCleanupHandlerTests {
         verify(repo).deleteSuccessBatchBefore(cutoff.capture(), eq(BATCH_SIZE));
 
         Instant actual = cutoff.getValue();
-        assertTrue(!actual.isBefore(before) && !actual.isAfter(after),
-                "cutoff 应为执行时刻 - 12 小时，实际: " + actual);
+        assertTrue(
+                !actual.isBefore(before) && !actual.isAfter(after),
+                "cutoff 应为执行时刻 - 12 小时，实际: " + actual
+        );
     }
 }

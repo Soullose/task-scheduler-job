@@ -1,6 +1,6 @@
 package com.w3.taskscheduler.core.persistence.entity;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 import org.hibernate.annotations.JdbcTypeCode;
@@ -41,13 +41,13 @@ public class JobExecutionPO {
     private Map<String, Object> params;
 
     @Column(name = "triggered_at", comment = "计划触发时刻")
-    private Instant triggeredAt;
+    private LocalDateTime triggeredAt;
 
     @Column(name = "start_at", comment = "开始时间")
-    private Instant startAt;
+    private LocalDateTime startAt;
 
     @Column(name = "end_at", comment = "结束时间")
-    private Instant endAt;
+    private LocalDateTime endAt;
 
     @Column(name = "execution_status", comment = "执行状态")
     @Enumerated(EnumType.STRING)

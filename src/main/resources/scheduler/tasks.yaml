@@ -59,7 +59,7 @@ tasks:
   - name: "heartbeat_interval"
     enabled: true
     trigger: interval
-    interval: 200s
+    interval: 1s
     interval-mode: rate
     handler: "com.w3.taskscheduler.jobs.handler.TestHandler"
     description: "演示 interval 固定间隔调度：每 200 秒执行一次（rate 模式）"
