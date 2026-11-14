@@ -3,6 +3,7 @@ package com.w3.taskscheduler.core.persistence.entity;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+import org.hibernate.Length;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -56,7 +57,8 @@ public class JobExecutionPO {
     @Column(name = "attempts", comment = "尝试次数")
     private int attempts;
 
-    @Column(name = "error_msg", length = 2000, comment = "异常消息")
+    // 使用 Long32 类型，因为 在PostgreSQL 为 TEXT 在MySQL 为 LONGTEXT
+    @Column(name = "error_msg", length = Length.LONG32, comment = "异常消息")
     private String errorMessage;
 
     // @Column(name = "exit_code")
