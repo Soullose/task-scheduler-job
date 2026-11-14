@@ -1,5 +1,7 @@
 package com.w3.taskscheduler.core.persistence.entity;
 
+import org.hibernate.Length;
+
 import com.github.f4b6a3.uuid.UuidCreator;
 
 import jakarta.persistence.Column;
@@ -9,15 +11,18 @@ import jakarta.persistence.Table;
 import lombok.Data;
 
 /**
- * {@code t_scheduler_job} 任务表实体：调度进程启动时任务定义的主来源（{@code scheduler.task-source: auto}）。
+ * {@code t_scheduler_job}
+ * 任务表实体：调度进程启动时任务定义的主来源（{@code scheduler.task-source: auto}）。
  * <p>
  * 进程对该表<b>只读</b>，任务行由外部维护（运维 SQL / 将来的管理端）灌入；
- * 表为空或读库失败时由上层兜底读取 YAML。列与 {@link com.w3.taskscheduler.core.model.TaskDefinition}
+ * 表为空或读库失败时由上层兜底读取 YAML。列与
+ * {@link com.w3.taskscheduler.core.model.TaskDefinition}
  * 等价，便于“库行 → TaskDefinition”无损映射；可空列允许缺省，由读取侧按宽松规则
  * 推断 / 补默认（见 {@code DatabaseTaskConfigLoader}）：
  * <ul>
  * <li>{@code trigger} 为空时按 {@code cron}/{@code interval} 是否有值推断；</li>
- * <li>{@code interval_mode} 缺省 {@code rate}、{@code run_on_startup} 缺省 {@code false}；</li>
+ * <li>{@code interval_mode} 缺省 {@code rate}、{@code run_on_startup} 缺省
+ * {@code false}；</li>
  * <li>{@code time_out}/{@code retry_delay}/{@code interval} 存时长文本（如
  * {@code 60s}/{@code 5s}/{@code 200s}）；</li>
  * <li>{@code allow_concurrent} 为空 = 跟随全局默认；{@code params} 存 JSON 对象文本。</li>
@@ -71,6 +76,6 @@ public class SchedulerJobPO {
     @Column(name = "allow_concurrent", comment = "任务级覆盖全局并发设置；空=跟随全局默认")
     private Boolean allowConcurrent;
 
-    @Column(name = "params", columnDefinition = "TEXT", comment = "自定义参数（JSON 对象文本，如 {\"source\":\"api\"}）")
+    @Column(name = "params", length = Length.LONG32, comment = "自定义参数（JSON 对象文本，如 {\"source\":\"api\"}）")
     private String params;
 }
